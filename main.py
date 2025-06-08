@@ -172,12 +172,12 @@ async def handle_help(message):
 
 
 async def handle_roll(message):
-    split_command = command.split('roll')
-    arguments = split_command[1][1:]
-    if not split_command[1]:
+    split_message = message.content.split('roll')
+    arguments = split_message[1][1:]
+    if not split_message[1]:
         dice_num = 20
         rolled_dice = random.randint(1, dice_num)
-    elif split_command[1]:
+    elif split_message[1]:
         dice_num = int(arguments[1:])
         rolled_dice = random.randint(1, dice_num)
     response = f'{message.author.display_name} rolled a d{dice_num} and got {rolled_dice} '
@@ -187,8 +187,8 @@ async def handle_roll(message):
 
 
 async def handle_8ball(message):
-    split_command = command.split('8ball')
-    question = split_command[1]
+    split_message = message.content.split('8ball')
+    question = split_message[1]
     answer_dict = {
         0: "It is certain",
         1: "It is decidedly so",
@@ -301,6 +301,27 @@ async def handle_deletehistory(message):
             print(f"Error deleting history from Firebase: {e}")
             await message.channel.send("An error occurred while trying to delete your history.")
 
+async def handle_forward(message):
+        # Replace with the actual server channel ID you want to forward to
+        target_channel_id = 808341519714484246  # <-- **IMPORTANT: Change this to your desired channel ID**
+
+        # Get the target channel object
+        target_channel = client.get_channel(target_channel_id)
+
+        if target_channel is None:
+            print(f"Error: Target channel with ID {target_channel_id} not found.")
+            return
+
+        # Format the message to be sent to the server channel
+        forwarded_message = f"{message.content[len('forward '):].strip()}"
+
+        try:
+            await target_channel.send(forwarded_message)
+            await message.channel.send("Message forwarded to the server.")
+        except Exception as e:
+            print(f"Error forwarding message: {e}")
+            await message.channel.send("An error occurred while trying to forward your message.")
+
 # Create a dictionary to map commands to their respective handler functions
 command_handlers = {
     'ursus': handle_ursus,
@@ -313,6 +334,7 @@ command_handlers = {
     'weaponf': handle_weaponf,
     'ask': handle_ask,
     'deletehistory': handle_deletehistory,
+    'forward': handle_forward,
 }
 
 @client.event
@@ -329,13 +351,26 @@ async def on_message(message):
   elif re.search(r'dex.*?(?:is )?(free|{})'.format(re.escape(free_emoji_unicode)), message.content.lower(), re.DOTALL):
     response = f'No it isn\'t'
     new = await message.reply(response)
-    
-  if message.content.startswith('~'):
-    command = message.content[1:].lower().split()[0]  # Get the base command
-    handler = command_handlers.get(command)
-    if handler:
-        await handler(message)
-        
+
+  # Check if the message is a private message
+  if isinstance(message.channel, discord.DMChannel):
+      # Process the command if it starts with '~forward'
+      if message.content.lower().startswith('~forward'):
+          # Extract the command
+          command = message.content[1:].lower().split()[0]
+          handler = command_handlers.get(command)
+
+          if handler:
+              await handler(message)
+      else:
+          # Optionally, send a message back to the user if the private message doesn't use the forward command
+          await message.channel.send("To forward a message to the server, please start your message with `~forward` followed by the message you want to send.")
+  elif message.content.startswith('~'):
+      command = message.content[1:].lower().split()[0]
+      handler = command_handlers.get(command)
+      if handler:
+          await handler(message)
+                
   if message.content.lower() == 'aran succ' and (875235978971861002 in list(
     role.id for role in message.author.roles)):
     response = f'Hey {message.author.display_name}, heard you play Aran. You have my condolences. You should gather everyone and go Hunter\'s Prey Changseop for this travesty'
