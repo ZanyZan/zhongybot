@@ -189,6 +189,11 @@ weapon_stats = {
         "Arcane": 221,
         "Genesis": 255
         },
+    "Celestial_Light": {
+        "Abso": 241,
+        "Arcane": 347,
+        "Genesis": 400
+        },
 }
 
 weapon_alias = {
@@ -258,6 +263,11 @@ weapon_alias = {
     "mx": weapon_stats["Martial_Brace"],
     "DawnWarrior": weapon_stats["2H_Sword"],
     "dw": weapon_stats["2H_Sword"],
+    "WindArcher": weapon_stats["Bow"],
+    "wa": weapon_stats["Bow"],
+    "NightWalker": weapon_stats["Claw"],
+    "nw": weapon_stats["Claw"],
+    "Sia": weapon_stats["Celestial_Light"],
 }
 weapon_flame = {"Abso": {"T3": .15, "T4": .22, "T5": .3025, "T6": .3993, "T7": .512435},
          "Arcane": {"T3": .18, "T4": .264, "T5": .363, "T6": .47916, "T7": .614922},

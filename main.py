@@ -6,22 +6,26 @@ from datetime import datetime, timedelta, timezone
 import pytz
 import operator
 import random
-import weapons as wp
 import re
 import google.generativeai as genai
+import asyncio
 from dotenv import load_dotenv
+from google.cloud.firestore_v1.base_query import FieldFilter
 load_dotenv()
 free_emoji_unicode = '\U0001F193'
+gem_emoji_unicode = '\U0001F48E'
 discord_max_length = 2000
 max_history_length = 20
-banana_claim_time_limit = 30
+min_gem_spawn_interval = 21600 #6 hours
+max_gem_spawn_interval = 43200 #12 hours
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
+gem_spawn_channel_id = 808341519714484246
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
-
+from bot_comm import command_handlers
 
 # Import helper functions from helpers.py (assuming you still want these)
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
@@ -55,287 +59,67 @@ async def update_my_time():
   global my_time
   my_time = int(time.time())
 
+@tasks.loop()
+async def spawn_gem():
+    """
+    Randomly spawns a gem emoji in a specified channel for users to claim by reacting.
+    """
+    await client.wait_until_ready()
 
+    channel = client.get_channel(gem_spawn_channel_id)
+    if channel:
+        try:
+            # Send a message indicating the gem has spawned
+            message = await channel.send(f"A wild {gem_emoji_unicode} has appeared! Go claim it!")
+            # Add the gem emoji as a reaction to the message
+            await message.add_reaction(gem_emoji_unicode)
+            print(f"Gem spawn message sent to channel {gem_spawn_channel_id}")
+        except Exception as e:
+            print(f"Error sending gem spawn message: {e}")
+    else:
+        print(f"Channel with ID {gem_spawn_channel_id} not found.")
+
+    # After spawning a gem, reschedule the loop with a new random interval
+    seconds=random.randint(min_gem_spawn_interval, max_gem_spawn_interval)
+    spawn_gem.change_interval(seconds=seconds)
+    print(f"Next gem will spawn in {convert(seconds)}")
+            
 @client.event
 async def on_ready():
   """
     Event triggered when the bot is ready. Starts the time update loop.
   """
-  #update_clocks.start()
   update_my_time.start()
+  client.loop.create_task(start_gem_spawning())  # Start the gem spawn task
+
   print("logged in as {0.user}".format(client))
 
-# Define functions for each command
-async def handle_ursus(message):
-    current_dt = datetime.fromtimestamp(my_time)
-    day = current_dt.day
-    month = current_dt.month
-    year = current_dt.year
 
-    # Define Ursus times for the current day
-    ursus_start1_epoch_current_day = int(datetime(year, month, day, 20, 0, 0).timestamp())
-    next_day_dt = current_dt + timedelta(days=1)
-    ursus_end1_epoch_next_day = int(datetime(next_day_dt.year, next_day_dt.month, next_day_dt.day, 0, 0, 0).timestamp())
-    ursus_start2_epoch_current_day = int(datetime(year, month, day, 13, 0, 0).timestamp())
-    ursus_end2_epoch_current_day = int(datetime(year, month, day, 17, 0, 0).timestamp())
+async def start_gem_spawning():
+    """
+    Handles the initial random delay before starting the gem spawn loop.
+    """
+    await client.wait_until_ready()
+    # Calculate a random initial delay (using your min/max intervals)
+    initial_delay = random.randint(min_gem_spawn_interval, max_gem_spawn_interval)
+    print(f"Waiting for initial gem spawn delay of {convert(initial_delay)}")
+    await asyncio.sleep(initial_delay)
 
-    # Define the start of the first Ursus run on the next day
-    next_day_ursus_start1_epoch = int(datetime(next_day_dt.year, next_day_dt.month, next_day_dt.day, 20, 0, 0).timestamp())
+    # Set the first interval for the loop and start it
+    # You might want to set a new random interval here for the first actual spawn
+    spawn_gem.change_interval(seconds=random.randint(min_gem_spawn_interval, max_gem_spawn_interval))
+    spawn_gem.start()
+    print("Gem spawn loop started.")
 
-    response = "" # Initialize response string
-    time_difference = 0 # Initialize time difference
+def convert(seconds):
+    seconds = seconds % (24 * 3600)
+    hour = seconds // 3600
+    seconds %= 3600
+    minutes = seconds // 60
+    seconds %= 60
+    
+    return "%d:%02d:%02d" % (hour, minutes, seconds)    
 
-    # Check if currently in the first Ursus run (spans across midnight)
-    if (ursus_start1_epoch_current_day < my_time < ursus_end1_epoch_next_day):
-        time_difference = ursus_end1_epoch_next_day - my_time
-        response = 'Ursus 2x meso is currently active, it will end in ' + str(timedelta(seconds=time_difference))
-
-    # Check if currently in the second Ursus run (within the current day)
-    elif (ursus_start2_epoch_current_day < my_time < ursus_end2_epoch_current_day):
-        time_difference = ursus_end2_epoch_current_day - my_time
-        response = 'Ursus 2x meso is currently active, it will end in ' + str(timedelta(seconds=time_difference))
-
-    # Check if between the end of the second run (current day) and the start of the first run (current day)
-    elif (ursus_end2_epoch_current_day < my_time < ursus_start1_epoch_current_day):
-        time_difference = ursus_start1_epoch_current_day - my_time
-        response = 'Ursus 2x meso is not active, it will start in ' + str(timedelta(seconds=time_difference))
-
-    # Check if before the start of the second run (current day)
-    elif (my_time < ursus_start2_epoch_current_day):
-         time_difference = ursus_start2_epoch_current_day - my_time
-         response = 'Ursus 2x meso is not active, it will start in ' + str(timedelta(seconds=time_difference))
-
-    # If none of the above, this case shouldn't ideally be reached with the current Ursus times, but as a fallback:
-    else:
-        response = "Unable to determine next Ursus time."
-
-    # Construct the full response including all Ursus times
-    full_response = (
-        'Ursus 2x meso is active between <t:' + str(ursus_start1_epoch_current_day) + ':t> and <t:' + str(ursus_end1_epoch_next_day) + ':t> '
-        'and between <t:' + str(ursus_start2_epoch_current_day) + ':t> and <t:' + str(ursus_end2_epoch_current_day) + ':t>\n' + response
-    )
-
-    embed = discord.Embed(description=full_response, colour=discord.Colour.purple())
-    await message.channel.send(embed=embed)
-
-async def handle_servertime(message):
-    UTC_time = datetime.fromtimestamp(my_time, timezone.utc).strftime('%H:%M %p')
-    response = 'The server time right now is: ' + UTC_time + ' \n > Maplestory GMS uses UTC as default server time'
-    embed = discord.Embed(description=response,
-                          colour=discord.Colour.purple())
-    await message.channel.send(embed=embed)
-
-
-async def handle_time(message):
-    splitted_command = message.content.split('time')
-    arguments = splitted_command[1][1:]
-    if not splitted_command[1]:
-        response = 'Your time right now is: <t:' + str(my_time) + ':t>'
-        embed = discord.Embed(description=response,
-                              colour=discord.Colour.purple())
-        await message.channel.send(embed=embed)
-    elif (arguments[0] == '+' or arguments[0] == '-'):
-        day = datetime.fromtimestamp(my_time).day
-        month = datetime.fromtimestamp(my_time).month
-        year = datetime.fromtimestamp(my_time).year
-        server_reset_time = int(datetime(year, month, day, 19, 0, 0).timestamp())
-        operator = arguments[0]
-        addends = arguments[1:]
-        new_time = int(calculate_time(server_reset_time, operator, float(addends) * 3600))
-        response = arguments + ' is: <t:' + str(new_time) + ':t>'
-        embed = discord.Embed(title="Time Converter",
-                              description=response,
-                              colour=discord.Colour.purple())
-        await message.channel.send(embed=embed)
-    else:
-        response = 'Try again noob..'
-        embed = discord.Embed(title="Time Converter",
-                              description=response,
-                              colour=discord.Colour.purple())
-        await message.channel.send(embed=embed)
-
-
-async def handle_esfera(message):
-    embed = discord.Embed(title='Esfera PQ', colour=discord.Colour.purple())
-    embed.set_image(
-        url=
-        "https://media.discordapp.net/attachments/991018662133657741/995399795306938448/7cfl8wyemec81.png"
-    )
-    await message.channel.send(embed=embed)
-
-async def handle_help(message):
-    response = 'Command List.\n- Use `~ursus` : to look for ursus time!.\n- Use `~servertime` : to check server\'s time (or check the clock channel!).\n- Use `~time` : if by some divine intervention you don\'t remember your own time LOL\n- You can also use `~time (+/-)(#Number)` : to check your local time in relation to server\'s reset time. eg: `~time +3` `~time -3`.\n- Use `~esfera` : if you are lazy and don\'t want to check the guides for the esfera PQ picture.\n- Use `~8ball` : to ask any yes/no questions.\n- Use `~roll` : to roll a d20 die.\n- Use `~roll d#`: to roll a d# die. eg: `~roll d40`, rolls a d40 die, etc.\n- Use `~weaponf class/weapon weapontype`: will give you the attack flame for your specified class/weapon (weapontype being Abso/Arcane/Genesis) **Except for Zero. Was lazy to implement Zero. \n- Use `~ask` to ask the bot something and get an answer. \n- Use `~deletehistory` to delete your conversation history with the bot. \n\nCommands are not case sensitive, you can do `~UrSuS` if you want.\n \nAny issues or if you have any ideas for new commands please, let Zany know!'
-    embed = discord.Embed(title="Zhongy Helps",
-                          description=response,
-                          colour=discord.Colour.purple())
-    await message.channel.send(embed=embed)
-
-
-async def handle_roll(message):
-    split_message = message.content.split('roll')
-    arguments = split_message[1][1:]
-    if not split_message[1]:
-        dice_num = 20
-        rolled_dice = random.randint(1, dice_num)
-    elif split_message[1]:
-        dice_num = int(arguments[1:])
-        rolled_dice = random.randint(1, dice_num)
-    response = f'{message.author.display_name} rolled a d{dice_num} and got {rolled_dice} '
-    embed = discord.Embed(description=response,
-                          colour=discord.Colour.purple())
-    await message.channel.send(embed=embed)
-
-
-async def handle_8ball(message):
-    split_message = message.content.split('8ball')
-    question = split_message[1]
-    answer_dict = {
-        0: "It is certain",
-        1: "It is decidedly so",
-        2: "Without a doubt",
-        3: "Yes - definitely",
-        4: "You may rely on it",
-        5: "As I see it, yes",
-        6: "Most likely",
-        7: "Outlook good",
-        8: "Yes",
-        9: "Signs point to yes",
-        10: "Reply hazy, try again",
-        11: "Ask again later",
-        12: "Better not tell you now",
-        13: "Cannot predict now",
-        14: "Concentrate and ask again",
-        15: "Don't count on it",
-        16: "My reply is no",
-        17: "My sources say no",
-        18: "Outlook not so good",
-        19: "Very doubtful",
-        20: "Ask Greg about it",
-    }
-    roll = random.randint(0, 20)
-    answer = answer_dict[roll]
-    title = f'You asked: "{question}"'
-    response = f'Magic 8 ball says: {answer}'
-    embed = discord.Embed(title=title,
-                          description=response,
-                          colour=discord.Colour.purple())
-    await message.channel.send(embed=embed)
-
-async def handle_weaponf(message):
-    weapon_class, weapon_tier = message.content.split()[1:]
-    weapon_tier = weapon_tier.title()
-    if weapon_class in wp.weapon_stats:
-        attack = wp.weapon_stats[weapon_class][weapon_tier]
-    elif weapon_class in wp.weapon_alias:
-        attack = wp.weapon_alias[weapon_class][weapon_tier]
-
-    response = wp.weapon_calc(attack, weapon_tier)
-
-    title = f'{weapon_tier} flame tiers for {weapon_class}'
-    embed = discord.Embed(title=title,
-                          description=response,
-                          colour=discord.Colour.purple())
-    await message.channel.send(embed=embed)
-
-
-async def handle_ask(message):
-    if message.channel.id == 971245167254331422:
-        if db is None:
-            await message.channel.send("Firebase is not initialized. Cannot use the ~ask command.")
-            return
-
-        prompt = message.content[len('ask '):].strip()
-        if not prompt:
-            await message.channel.send("Please provide a prompt after ~ask.")
-            return
-
-        channel_id = str(message.channel.id)
-        user_id = str(message.author.id)
-        doc_ref = db.collection('conversation_history').document(channel_id).collection('users').document(user_id)
-
-        doc = doc_ref.get()
-        if doc.exists:
-            history = doc.to_dict().get('history', [])
-        else:
-            history = []
-
-        history.append({'role': 'user', 'parts': [prompt]})
-
-        try:
-            response = model.generate_content(history)
-            history.append({'role': 'model', 'parts': [response.text]})
-            if len(history) > max_history_length:
-                history = history[-max_history_length:]
-
-            doc_ref.set({'history': history})
-
-            response_chunks = split_response(response.text, discord_max_length)
-            for chunk in response_chunks:
-                await message.channel.send(chunk)
-
-        except Exception as e:
-            print(f"An error occurred during LLM interaction: {e}")
-            await message.channel.send("Sorry, I couldn't process your request at this time.")
-    else:
-        await message.channel.send("That command is restricted to #debris-botspam.")
-
-
-async def handle_deletehistory(message):
-    if message.channel.id == 971245167254331422:
-        if db is None:
-            await message.channel.send("Firebase is not initialized. Cannot delete history.")
-            return
-
-        channel_id = str(message.channel.id)
-        user_id = str(message.author.id)
-        doc_ref = db.collection('conversation_history').document(channel_id).collection('users').document(user_id)
-
-        try:
-            doc = doc_ref.get()
-            if doc.exists:
-                doc_ref.delete()
-                await message.channel.send(f"Conversation history for {message.author.display_name} in this channel has been deleted.")
-            else:
-                await message.channel.send(f"No conversation history found for {message.author.display_name} in this channel.")
-        except Exception as e:
-            print(f"Error deleting history from Firebase: {e}")
-            await message.channel.send("An error occurred while trying to delete your history.")
-
-async def handle_forward(message):
-        # Replace with the actual server channel ID you want to forward to
-        target_channel_id = 808341519714484246  # <-- **IMPORTANT: Change this to your desired channel ID**
-
-        # Get the target channel object
-        target_channel = client.get_channel(target_channel_id)
-
-        if target_channel is None:
-            print(f"Error: Target channel with ID {target_channel_id} not found.")
-            return
-
-        # Format the message to be sent to the server channel
-        forwarded_message = f"{message.content[len('forward '):].strip()}"
-
-        try:
-            await target_channel.send(forwarded_message)
-            await message.channel.send("Message forwarded to the server.")
-        except Exception as e:
-            print(f"Error forwarding message: {e}")
-            await message.channel.send("An error occurred while trying to forward your message.")
-
-# Create a dictionary to map commands to their respective handler functions
-command_handlers = {
-    'ursus': handle_ursus,
-    'servertime': handle_servertime,
-    'time': handle_time,
-    'esfera': handle_esfera,
-    'help': handle_help,
-    'roll': handle_roll,
-    '8ball': handle_8ball,
-    'weaponf': handle_weaponf,
-    'ask': handle_ask,
-    'deletehistory': handle_deletehistory,
-    'forward': handle_forward,
-}
 
 @client.event
 async def on_message(message):
@@ -361,7 +145,7 @@ async def on_message(message):
           handler = command_handlers.get(command)
 
           if handler:
-              await handler(message)
+              await handler(message, client=client)
       else:
           # Optionally, send a message back to the user if the private message doesn't use the forward command
           await message.channel.send("To forward a message to the server, please start your message with `~forward` followed by the message you want to send.")
@@ -369,7 +153,16 @@ async def on_message(message):
       command = message.content[1:].lower().split()[0]
       handler = command_handlers.get(command)
       if handler:
-          await handler(message)
+          # Pass necessary arguments based on the command
+          if command in ['ask']:
+              await handler(message, db=db, model=model, max_history_length=max_history_length, discord_max_length=discord_max_length)
+          elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems']:
+              await handler(message, db=db)
+          elif command in ['ursus', 'servertime', 'time']:
+              await handler(message, my_time=my_time) # Pass my_time here
+          else: # For commands that don't need extra arguments
+              await handler(message)
+
                 
   if message.content.lower() == 'aran succ' and (875235978971861002 in list(
     role.id for role in message.author.roles)):
@@ -378,82 +171,97 @@ async def on_message(message):
     await new.add_reaction('<:FeelsAranMan:852726957091323934>')
 
   if message.author.id == 257995877367414785:
-    roll = random.randint(1, 11)
-    print("Ub3r rolled", roll)
-    if roll == 1:
-      text = message.content.lower()
-      response = capi_sentence(text) # Using capi_sentence from helpers
-      await message.reply(response)
+      roll = random.randint(1, 100)
+      print("Ub3r rolled", roll)
+      if roll <= 7:
+          text = message.content.lower()
+          response = capi_sentence(text) # Using capi_sentence from helpers
+          await message.reply(response, mention_author=False)
+  elif message.author.id == 249678251226562561:
+      roll = random.randint(1,100)
+      print("Harri rolled", roll)
+      if roll <= 1:
+          roll = random.randint(1,4)
+          if roll <= 3:
+              text = message.content.lower()
+              response = capi_sentence(text) # Using capi_sentence from helpers
+              await message.reply(response, mention_author=False)
+          else: # 25% chance for the custom message using Gemini
+              if model:  # Ensure the Gemini model is initialized
+                  try:
+                      # Define your custom Gemini prompt here
+                      gemini_prompt = f"In a way that shuts him up remind the user named Harri that he has a 70 boss damage familiar card, which is extremely rare. You are the one addressing him directly and make it short"
+
+                      response = model.generate_content([gemini_prompt])
+                      # Split the response if it's too long for Discord
+                      response_chunks = split_response(response.text, discord_max_length)
+                      for chunk in response_chunks:
+                          await message.channel.send(chunk)
+
+                  except Exception as e:
+                      print(f"An error occurred during custom Gemini interaction: {e}")
+                      await message.channel.send("Sorry, I couldn't generate a response for you at this time.")
+              else:
+                  await message.channel.send("Gemini model is not initialized. Cannot generate a custom response.")
   if re.search(r"\bread\b", message.content):
     roll = random.randint(1,5)
     print("Read was typed. Rolled:", roll)
     if roll == 1:
       await message.channel.send("Debris can't read <:DebrisCantRead:1157773828173332550>")
-  if message.author.id == 181446303782404096:
-      roll = random.randint(1,20)
-      print("Zyn rolled: ", roll)
-      if roll == 1:
-          banana_message = await message.channel.send("A :banana: has spawned! Go claim it!")
-          # Add the banana reaction to the message
-          await banana_message.add_reaction('\U0001F34C')
-          # Store the message ID in the database, indicating it's a banana message
-          if db is not None:
-              try:
-                  doc_ref = db.collection('banana_spawns').document(str(banana_message.id))
-                  # Only store 'claimed_by' initially
-                  doc_ref.set({
-                      'claimed_by': None
-                  })
-                  print(f"Banana spawn message {banana_message.id} recorded in database.")
-              except Exception as e:
-                  print(f"Error writing banana spawn to database: {e}")
-                  
+                      
 @client.event
 async def on_reaction_add(reaction, user):
-    # Ignore reactions from the bot itself
-    if user == client.user:
+    """
+    Handles reactions added to messages. Checks for reactions on gem spawn messages
+    and records claims in Firebase.
+    """
+    # Ignore reactions from the bot itself or if Firebase is not initialized
+    gem_counts = [1, 2, 3, 4, 5]
+    weights = [0.5, 0.25, 0.15, 0.07, 0.03]
+    if user == client.user or db is None:
         return
+    # Check if the reaction is the gem emoji
+    if str(reaction.emoji) == gem_emoji_unicode:
+        # Check if the message was sent by the bot
+        if reaction.message.author == client.user:
+            # Check if the gem has already been claimed
+            gem_claims_ref = db.collection('gem_claims')
+            query = gem_claims_ref.where(filter=FieldFilter('message_id', '==', reaction.message.id)).limit(1)
+            docs = query.stream()
 
-    # Check if the reaction is a banana emoji
-    if str(reaction.emoji) == '\U0001F34C':
-        message = reaction.message
-        message_id = str(message.id)
+            claimed = False
+            for doc in docs:
+                claimed = True
+                break  # Gem has already been claimed
 
-        if db is not None:
-            try:
-                doc_ref = db.collection('banana_spawns').document(message_id)
-                doc = doc_ref.get()
-
-                if doc.exists:
-                    banana_data = doc.to_dict()
-                    claimed_by = banana_data.get('claimed_by')
-
-                    # Check if the banana has already been claimed
-                    if claimed_by is None:
-                        # Claim the banana
-                        user_id = str(user.id)
-                        doc_ref.update({'claimed_by': user_id})
-
-                        # Update user's total claims
-                        user_claims_ref = db.collection('user_banana_claims').document(user_id)
-                        user_claims_doc = user_claims_ref.get()
-
-                        if user_claims_doc.exists:
-                            current_claims = user_claims_doc.to_dict().get('total_claims', 0)
-                        else:
-                            current_claims = 0 # Initialize to 0 if the document doesn't exist
-
-                        user_claims_ref.set({'total_claims': current_claims + 1})
-
-                        # Send a channel message indicating who claimed the banana
-                        claimed_message = f":banana: has been claimed by {user.display_name}! Total claims: {current_claims + 1}"
-                        await message.channel.send(claimed_message)
-
-                        print(f"User {user.display_name} claimed banana on message {message_id}. Total claims updated.")
-                    else:
-                        print(f"Banana on message {message_id} already claimed by user {claimed_by}.")
-
-            except Exception as e:
-                print(f"Error handling banana reaction: {e}")
-                
+            if not claimed:
+                # Check if the reaction count is 2 (bot's reaction + first user's reaction)
+                # This is a simple way to ensure it's the first claim attempt
+                # More robust logic might involve checking timestamps
+                if reaction.count == 2:
+                    channel = reaction.message.channel
+                    gemcount = random.choices(gem_counts, weights=weights, k=1)[0]
+                    try:
+                        # Record the claim in Firebase
+                        gem_claims_ref.add({
+                            'message_id': reaction.message.id,
+                            'user_id': user.id,
+                            'username': user.display_name,
+                            'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
+                        })
+                        
+                                                # Update user's gem count
+                        user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
+                        user_gem_counts_ref.set({
+                            'username': user.display_name,
+                            'gem_count': firestore.Increment(gemcount)
+                        }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
+                        
+                        await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
+                        print(f"ID:{user.id} claimed the gem")
+                    except Exception as e:
+                        print(f"Error recording gem claim in Firebase: {e}")
+                        await channel.send("An error occurred while trying to claim the gem.")
+            else:
+                print(f"This gem {reaction.message.id} has already claimed.")
 client.run(my_secret)
