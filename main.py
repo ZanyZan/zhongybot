@@ -11,9 +11,11 @@ import google.generativeai as genai
 import asyncio
 from dotenv import load_dotenv
 from google.cloud.firestore_v1.base_query import FieldFilter
+aui = [90936340002119680, 264507975568195587]
 load_dotenv()
 free_emoji_unicode = '\U0001F193'
 gem_emoji_unicode = '\U0001F48E'
+sparkle_emoji_unicode = '\U00002728'
 discord_max_length = 2000
 max_history_length = 20
 min_gem_spawn_interval = 21600 #6 hours
@@ -22,14 +24,14 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 gem_spawn_channel_id = 808341519714484246
+spawned_gem_message_id = 0
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
 from bot_comm import command_handlers
-
 # Import helper functions from helpers.py (assuming you still want these)
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
-
+first_claim_timestamp = {}
 
 # Replace 'path/to/your/serviceAccountKey.json' with the actual path
 try:
@@ -69,11 +71,20 @@ async def spawn_gem():
     channel = client.get_channel(gem_spawn_channel_id)
     if channel:
         try:
-            # Send a message indicating the gem has spawned
-            message = await channel.send(f"A wild {gem_emoji_unicode} has appeared! Go claim it!")
+            is_sparkly = random.randint(1,5)
+            if is_sparkly <= 1:
+                message_content = f"Wow! {sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode} A shiny gem has appeared! Go claim it!"
+                print("Sparkly gem spawned!")
+            else:
+                message_content = f"A wild {gem_emoji_unicode} has appeared! Go claim it!"
+                print("Regular gem spawned.")
             # Add the gem emoji as a reaction to the message
+            message = await channel.send(message_content)
             await message.add_reaction(gem_emoji_unicode)
-            print(f"Gem spawn message sent to channel {gem_spawn_channel_id}")
+            global spawned_gem_message_id # Use global to modify the global variable
+            spawned_gem_message_id = message.id
+            first_claim_timestamp[spawned_gem_message_id] = None
+            print(f"Gem spawn message sent with ID {spawned_gem_message_id}")
         except Exception as e:
             print(f"Error sending gem spawn message: {e}")
     else:
@@ -83,7 +94,7 @@ async def spawn_gem():
     seconds=random.randint(min_gem_spawn_interval, max_gem_spawn_interval)
     spawn_gem.change_interval(seconds=seconds)
     print(f"Next gem will spawn in {convert(seconds)}")
-            
+
 @client.event
 async def on_ready():
   """
@@ -117,8 +128,8 @@ def convert(seconds):
     seconds %= 3600
     minutes = seconds // 60
     seconds %= 60
-    
-    return "%d:%02d:%02d" % (hour, minutes, seconds)    
+
+    return "%d:%02d:%02d" % (hour, minutes, seconds)
 
 
 @client.event
@@ -156,14 +167,39 @@ async def on_message(message):
           # Pass necessary arguments based on the command
           if command in ['ask']:
               await handler(message, db=db, model=model, max_history_length=max_history_length, discord_max_length=discord_max_length)
-          elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems']:
+          elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots']:
               await handler(message, db=db)
           elif command in ['ursus', 'servertime', 'time']:
               await handler(message, my_time=my_time) # Pass my_time here
+          elif command in ['wipegems']:
+              await handler(message, db, 808729400920899635) #Member role id for debris
           else: # For commands that don't need extra arguments
               await handler(message)
+      elif command == 'spawngem':
+          if message.author.id not in aui:
+              await message.channel.send("You are not authorized to use this command.")
+              return
+          channel = client.get_channel(gem_spawn_channel_id)
+          if channel:
+              try:
+                  is_sparkly = random.randint(1,5)
+                  if is_sparkly <= 1:
+                      message_content = f"Wow! {sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode} A shiny gem has appeared! Go claim it!"
+                      print("Sparkly gem spawned!")
+                  else:
+                      message_content = f"A wild {gem_emoji_unicode} has appeared! Go claim it!"
+                      print("Regular gem spawned.")
+                  # Add the gem emoji as a reaction to the message
+                  message = await channel.send(message_content)
+                  await message.add_reaction(gem_emoji_unicode)
+                  global spawned_gem_message_id # Use global to modify the global variable
+                  spawned_gem_message_id = message.id
+                  first_claim_timestamp[spawned_gem_message_id] = None
+                  print(f"Gem spawn message sent with ID {spawned_gem_message_id}")
+              except Exception as e:
+                  print(f"Error sending gem spawn message: {e}")
 
-                
+
   if message.content.lower() == 'aran succ' and (875235978971861002 in list(
     role.id for role in message.author.roles)):
     response = f'Hey {message.author.display_name}, heard you play Aran. You have my condolences. You should gather everyone and go Hunter\'s Prey Changseop for this travesty'
@@ -201,14 +237,7 @@ async def on_message(message):
                   except Exception as e:
                       print(f"An error occurred during custom Gemini interaction: {e}")
                       await message.channel.send("Sorry, I couldn't generate a response for you at this time.")
-              else:
-                  await message.channel.send("Gemini model is not initialized. Cannot generate a custom response.")
-  if re.search(r"\bread\b", message.content):
-    roll = random.randint(1,5)
-    print("Read was typed. Rolled:", roll)
-    if roll == 1:
-      await message.channel.send("Debris can't read <:DebrisCantRead:1157773828173332550>")
-                      
+ 
 @client.event
 async def on_reaction_add(reaction, user):
     """
@@ -218,50 +247,107 @@ async def on_reaction_add(reaction, user):
     # Ignore reactions from the bot itself or if Firebase is not initialized
     gem_counts = [1, 2, 3, 4, 5]
     weights = [0.5, 0.25, 0.15, 0.07, 0.03]
+
     if user == client.user or db is None:
         return
-    # Check if the reaction is the gem emoji
-    if str(reaction.emoji) == gem_emoji_unicode:
-        # Check if the message was sent by the bot
-        if reaction.message.author == client.user:
-            # Check if the gem has already been claimed
-            gem_claims_ref = db.collection('gem_claims')
-            query = gem_claims_ref.where(filter=FieldFilter('message_id', '==', reaction.message.id)).limit(1)
-            docs = query.stream()
 
-            claimed = False
-            for doc in docs:
-                claimed = True
-                break  # Gem has already been claimed
+    # Check if the reaction is the gem emoji and on the current spawned gem message
+    if str(reaction.emoji) == gem_emoji_unicode and reaction.message.author == client.user and reaction.message.id == spawned_gem_message_id:
+        message_id = reaction.message.id
+        channel = reaction.message.channel
 
-            if not claimed:
-                # Check if the reaction count is 2 (bot's reaction + first user's reaction)
-                # This is a simple way to ensure it's the first claim attempt
-                # More robust logic might involve checking timestamps
-                if reaction.count == 2:
-                    channel = reaction.message.channel
+        # Check if the user has already claimed this specific gem
+        gem_claims_ref = db.collection('gem_claims')
+        query = gem_claims_ref.where(filter=FieldFilter('message_id', '==', message_id)).where(filter=FieldFilter('user_id', '==', user.id)).limit(1)
+        docs = query.stream()
+
+        claimed_by_user = False
+        for doc in docs:
+            claimed_by_user = True
+            break  # User has already claimed this gem
+
+        if not claimed_by_user:
+            current_time = datetime.now(timezone.utc)
+
+            # Check if this is the first claim for this gem message
+            if first_claim_timestamp.get(message_id) is None:
+                # This is the first claim, record the timestamp
+                first_claim_timestamp[message_id] = current_time
+                print(f"First claim on gem message {message_id} at {current_time}")
+
+                # Determine if it was a sparkly gem based on the message content
+                is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
+
+                # Process the claim
+                if is_sparkly_claim:
+                    gemcount = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
+                    print(f"Sparkly gem claimed! User {user.display_name} gets {gemcount} gems.")
+                else:
                     gemcount = random.choices(gem_counts, weights=weights, k=1)[0]
+                    print(f"Regular gem claimed! User {user.display_name} gets {gemcount} gems.")
+
+
+                try:
+                    # Record the claim in Firebase
+                    gem_claims_ref.add({
+                        'message_id': message_id,
+                        'user_id': user.id,
+                        'username': user.display_name,
+                        'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
+                    })
+
+                    # Update user's gem count
+                    user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
+                    user_gem_counts_ref.set({
+                        'username': user.display_name,
+                        'gem_count': firestore.Increment(gemcount)
+                    }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
+
+                    await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
+                    print(f"ID:{user.id} claimed the gem")
+                except Exception as e:
+                    print(f"Error recording gem claim in Firebase: {e}")
+                    await channel.send("An error occurred while trying to claim the gem.")
+
+            else:
+                # Not the first claim, check if within 30 seconds of the first claim
+                time_difference = (current_time - first_claim_timestamp[message_id]).total_seconds()
+
+                if time_difference <= 30:
+                     # Determine if it was a sparkly gem based on the message content
+                    is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
+
+                    # Process the claim
+                    if is_sparkly_claim:
+                        gemcount = random.randint(6, 10)
+                        print(f"Sparkly gem claimed! User {user.display_name} gets {gemcount} gems.")
+                    else:
+                        gemcount = random.choices(gem_counts, weights=weights, k=1)[0]
+                        print(f"Regular gem claimed! User {user.display_name} gets {gemcount} gems.")
                     try:
                         # Record the claim in Firebase
                         gem_claims_ref.add({
-                            'message_id': reaction.message.id,
+                            'message_id': message_id,
                             'user_id': user.id,
                             'username': user.display_name,
                             'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
                         })
-                        
-                                                # Update user's gem count
+
+                        # Update user's gem count
                         user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
                         user_gem_counts_ref.set({
                             'username': user.display_name,
                             'gem_count': firestore.Increment(gemcount)
                         }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
-                        
+
                         await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
                         print(f"ID:{user.id} claimed the gem")
                     except Exception as e:
                         print(f"Error recording gem claim in Firebase: {e}")
                         await channel.send("An error occurred while trying to claim the gem.")
-            else:
-                print(f"This gem {reaction.message.id} has already claimed.")
+                else:
+                    print(f"Reaction on gem message {message_id} by {user.display_name} was outside the 30-second window based on the first claim.")
+
+        else:
+            print(f"User {user.display_name} has already claimed gem {message_id}.")
 client.run(my_secret)
