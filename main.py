@@ -9,6 +9,7 @@ import random
 import re
 import google.generativeai as genai
 import asyncio
+import math
 from dotenv import load_dotenv
 from google.cloud.firestore_v1.base_query import FieldFilter
 aui = [90936340002119680, 264507975568195587]
@@ -28,12 +29,10 @@ spawned_gem_message_id = 0
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
-from bot_comm import command_handlers
-# Import helper functions from helpers.py (assuming you still want these)
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
+from bot_comm import command_handlers, shop_items
+from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert
 first_claim_timestamp = {}
 
-# Replace 'path/to/your/serviceAccountKey.json' with the actual path
 try:
     cred = credentials.Certificate('/home/zanypi/env/gen-lang-client-0697881417-firebase-adminsdk-fbsvc-c6eb0253de.json')
     firebase_admin.initialize_app(cred)
@@ -44,7 +43,6 @@ except Exception as e:
     db = None # Set db to None if initialization fails
 
 client = discord.Client(intents=intents)
-#discord bot token is saved as a secrete token in replit.
 my_secret = os.getenv("DISCORD_TOKEN")
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 genai.configure(api_key=GEMINI_API_KEY)
@@ -95,6 +93,29 @@ async def spawn_gem():
     spawn_gem.change_interval(seconds=seconds)
     print(f"Next gem will spawn in {convert(seconds)}")
 
+
+async def manual_gem_spawn():
+    await client.wait_until_ready()
+    channel = client.get_channel(gem_spawn_channel_id)
+    if channel:
+        try:
+            is_sparkly = random.randint(1,5)
+            if is_sparkly <= 1:
+                message_content = f"Wow! {sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode} A shiny gem has appeared! Go claim it!"
+                print("Sparkly gem spawned!")
+            else:
+                message_content = f"A wild {gem_emoji_unicode} has appeared! Go claim it!"
+                print("Regular gem spawned.")
+            # Add the gem emoji as a reaction to the message
+            message = await channel.send(message_content)
+            await message.add_reaction(gem_emoji_unicode)
+            global spawned_gem_message_id # Use global to modify the global variable
+            spawned_gem_message_id = message.id
+            first_claim_timestamp[spawned_gem_message_id] = None
+            print(f"Gem spawn message sent with ID {spawned_gem_message_id}")
+        except Exception as e:
+            print(f"Error sending gem spawn message: {e}")
+
 @client.event
 async def on_ready():
   """
@@ -121,15 +142,6 @@ async def start_gem_spawning():
     spawn_gem.change_interval(seconds=random.randint(min_gem_spawn_interval, max_gem_spawn_interval))
     spawn_gem.start()
     print("Gem spawn loop started.")
-
-def convert(seconds):
-    seconds = seconds % (24 * 3600)
-    hour = seconds // 3600
-    seconds %= 3600
-    minutes = seconds // 60
-    seconds %= 60
-
-    return "%d:%02d:%02d" % (hour, minutes, seconds)
 
 
 @client.event
@@ -167,7 +179,7 @@ async def on_message(message):
           # Pass necessary arguments based on the command
           if command in ['ask']:
               await handler(message, db=db, model=model, max_history_length=max_history_length, discord_max_length=discord_max_length)
-          elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots']:
+          elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'inventory']:
               await handler(message, db=db)
           elif command in ['ursus', 'servertime', 'time']:
               await handler(message, my_time=my_time) # Pass my_time here
@@ -176,28 +188,11 @@ async def on_message(message):
           else: # For commands that don't need extra arguments
               await handler(message)
       elif command == 'spawngem':
-          if message.author.id not in aui:
-              await message.channel.send("You are not authorized to use this command.")
-              return
-          channel = client.get_channel(gem_spawn_channel_id)
-          if channel:
-              try:
-                  is_sparkly = random.randint(1,5)
-                  if is_sparkly <= 1:
-                      message_content = f"Wow! {sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode} A shiny gem has appeared! Go claim it!"
-                      print("Sparkly gem spawned!")
-                  else:
-                      message_content = f"A wild {gem_emoji_unicode} has appeared! Go claim it!"
-                      print("Regular gem spawned.")
-                  # Add the gem emoji as a reaction to the message
-                  message = await channel.send(message_content)
-                  await message.add_reaction(gem_emoji_unicode)
-                  global spawned_gem_message_id # Use global to modify the global variable
-                  spawned_gem_message_id = message.id
-                  first_claim_timestamp[spawned_gem_message_id] = None
-                  print(f"Gem spawn message sent with ID {spawned_gem_message_id}")
-              except Exception as e:
-                  print(f"Error sending gem spawn message: {e}")
+            if message.author.id not in aui:
+                await message.channel.send("You are not authorized to use this command.")
+                return
+            else:
+                await manual_gem_spawn()
 
 
   if message.content.lower() == 'aran succ' and (875235978971861002 in list(
@@ -245,7 +240,7 @@ async def on_reaction_add(reaction, user):
     and records claims in Firebase.
     """
     # Ignore reactions from the bot itself or if Firebase is not initialized
-    gem_counts = [1, 2, 3, 4, 5]
+    gem_counts = [2, 3, 4, 5, 6]
     weights = [0.5, 0.25, 0.15, 0.07, 0.03]
 
     if user == client.user or db is None:
@@ -278,13 +273,31 @@ async def on_reaction_add(reaction, user):
                 # Determine if it was a sparkly gem based on the message content
                 is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
 
-                # Process the claim
+                # Determine base gem count
                 if is_sparkly_claim:
-                    gemcount = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
-                    print(f"Sparkly gem claimed! User {user.display_name} gets {gemcount} gems.")
+                    base_gem_count = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
+                    print(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
                 else:
-                    gemcount = random.choices(gem_counts, weights=weights, k=1)[0]
-                    print(f"Regular gem claimed! User {user.display_name} gets {gemcount} gems.")
+                    base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
+                    print(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+
+
+                # Check user's inventory for gem acquisition booster
+                user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
+                user_doc = user_doc_ref.get()
+                acquisition_multiplier = 1.0 # Default multiplier
+                if user_doc.exists:
+                    inventory = user_doc.to_dict().get('inventory', {})
+                    gem_booster_item = inventory.get("gem_booster")
+                    if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
+                         booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
+                         acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0)
+                         print(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
+
+
+                # Calculate final gem count after applying multiplier using ceiling formula
+                gemcount = math.ceil(base_gem_count * acquisition_multiplier)
+                print(f"Final gem count after multiplier: {gemcount}")
 
 
                 try:
@@ -296,12 +309,17 @@ async def on_reaction_add(reaction, user):
                         'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
                     })
 
-                    # Update user's gem count
+                    # Update user's gem count and ensure inventory is not overwritten
                     user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
-                    user_gem_counts_ref.set({
+                    # Only set inventory if it doesn't exist
+                    user_doc = user_gem_counts_ref.get()
+                    update_data = {
                         'username': user.display_name,
                         'gem_count': firestore.Increment(gemcount)
-                    }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
+                    }
+                    if not user_doc.exists or 'inventory' not in user_doc.to_dict():
+                        update_data['inventory'] = {}  # Initialize inventory only if missing
+                    user_gem_counts_ref.set(update_data, merge=True)
 
                     await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
                     print(f"ID:{user.id} claimed the gem")
@@ -317,13 +335,31 @@ async def on_reaction_add(reaction, user):
                      # Determine if it was a sparkly gem based on the message content
                     is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
 
-                    # Process the claim
+                    # Determine base gem count
                     if is_sparkly_claim:
-                        gemcount = random.randint(6, 10)
-                        print(f"Sparkly gem claimed! User {user.display_name} gets {gemcount} gems.")
+                        base_gem_count = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
+                        print(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
                     else:
-                        gemcount = random.choices(gem_counts, weights=weights, k=1)[0]
-                        print(f"Regular gem claimed! User {user.display_name} gets {gemcount} gems.")
+                        base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
+                        print(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+
+
+                    # Check user's inventory for gem acquisition booster
+                    user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
+                    user_doc = user_doc_ref.get()
+                    acquisition_multiplier = 1.0 # Default multiplier
+                    if user_doc.exists:
+                        inventory = user_doc.to_dict().get('inventory', {})
+                        gem_booster_item = inventory.get("gem_booster")
+                        if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
+                            booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
+                            acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0)
+                            print(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
+
+                    # Calculate final gem count after applying multiplier using ceiling formula
+                    gemcount = math.ceil(base_gem_count * acquisition_multiplier)
+                    print(f"Final gem count after multiplier: {gemcount}")
+
                     try:
                         # Record the claim in Firebase
                         gem_claims_ref.add({
@@ -333,11 +369,13 @@ async def on_reaction_add(reaction, user):
                             'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
                         })
 
-                        # Update user's gem count
+                        # Update user's gem count and ensure inventory is present
                         user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
                         user_gem_counts_ref.set({
                             'username': user.display_name,
                             'gem_count': firestore.Increment(gemcount)
+                            # Inventory is not explicitly added here as it should be initialized on the first claim
+                            # and merge=True will preserve existing inventory data
                         }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
 
                         await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")

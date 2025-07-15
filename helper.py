@@ -154,3 +154,12 @@ def format_month_day(date_str, year=None):
   # Create a new datetime object with the provided year, and parsed month and day
   formatted_date = datetime(year, month_day.month, month_day.day)
   return formatted_date
+
+def convert(seconds):
+    seconds = seconds % (24 * 3600)
+    hour = seconds // 3600
+    seconds %= 3600
+    minutes = seconds // 60
+    seconds %= 60
+
+    return "%d:%02d:%02d" % (hour, minutes, seconds)
