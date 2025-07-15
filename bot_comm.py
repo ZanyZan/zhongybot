@@ -14,6 +14,7 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
+import logging
 aui = [90936340002119680, 264507975568195587]
 # Define functions for each command
 async def handle_ursus(message, my_time):
@@ -89,7 +90,7 @@ async def handle_checkgems(message, db):
         await message.channel.send(embed=embed)
 
     except Exception as e:
-        print(f"Error retrieving gem count from Firebase: {e}")
+        logging.error(f"Error retrieving gem count from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve your gem count.")
         
 async def handle_servertime(message, my_time):
@@ -249,7 +250,7 @@ async def handle_ask(message, db, model, max_history_length, discord_max_length)
                 await message.channel.send(chunk)
 
         except Exception as e:
-            print(f"An error occurred during LLM interaction: {e}")
+            logging.error(f"An error occurred during LLM interaction: {e}")
             await message.channel.send("Sorry, I couldn't process your request at this time.")
     else:
         await message.channel.send("That command is restricted to #debris-botspam.")
@@ -273,7 +274,7 @@ async def handle_deletehistory(message, db):
             else:
                 await message.channel.send(f"No conversation history found for {message.author.display_name} in this channel.")
         except Exception as e:
-            print(f"Error deleting history from Firebase: {e}")
+            logging.error(f"Error deleting history from Firebase: {e}")
             await message.channel.send("An error occurred while trying to delete your history.")
 
 async def handle_forward(message, client):
@@ -284,7 +285,7 @@ async def handle_forward(message, client):
         target_channel = client.get_channel(target_channel_id)
 
         if target_channel is None:
-            print(f"Error: Target channel with ID {target_channel_id} not found.")
+            logging.error(f"Error: Target channel with ID {target_channel_id} not found.")
             return
 
         # Format the message to be sent to the server channel
@@ -294,7 +295,7 @@ async def handle_forward(message, client):
             await target_channel.send(forwarded_message)
             await message.channel.send("Message forwarded to the server.")
         except Exception as e:
-            print(f"Error forwarding message: {e}")
+            logging.error(f"Error forwarding message: {e}")
             await message.channel.send("An error occurred while trying to forward your message.")
 
 
@@ -335,10 +336,10 @@ async def handle_givegems(message, db):
         }, merge=True)
 
         await message.channel.send(f"Successfully gave {amount} gem(s) to {target_user.display_name}.")
-        print(f"Gave {amount} gem(s) to user ID:{target_user.id}")
+        logging.info(f"Gave {amount} gem(s) to user ID:{target_user.id}")
 
     except Exception as e:
-        print(f"Error giving gems: {e}")
+        logging.error(f"Error giving gems: {e}")
         await message.channel.send("An error occurred while trying to give gems.")
 
 async def handle_takegems(message, db):
@@ -406,12 +407,12 @@ async def handle_takegems(message, db):
                 await message.channel.send(
                     f"Successfully took {taken} gem(s) from {target_user.display_name}. They now have {new_gems} gem(s)."
                 )
-            print(f"Took {taken} gem(s) from user ID:{target_user.id}")
+            logging.info(f"Took {taken} gem(s) from user ID:{target_user.id}")
         else:
             await message.channel.send(f"Could not find {target_user.display_name}'s gem count in the database.")
 
     except Exception as e:
-        print(f"Error taking gems: {e}")
+        logging.error(f"Error taking gems: {e}")
         await message.channel.send("An error occurred while trying to take gems.")
 
 
@@ -578,7 +579,7 @@ async def handle_slots(message, db):
 
 
         except Exception as e:
-            print(f"Error playing slots: {e}")
+            logging.error(f"Error playing slots: {e}")
             await message.channel.send("An error occurred while trying to play the slot machine.")
     else:
         await message.channel.send("That command is restricted to <#debris-botspam>.")
@@ -657,9 +658,9 @@ async def handle_wipegems(message, db, target_role_id):
                     'gem_count': 0
                 }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
                 wiped_users.append(member.display_name)
-                print(f"Wiped gems for user ID:{user_id} ({member.display_name})")
+                logging.info(f"Wiped gems for user ID:{user_id} ({member.display_name})")
             except Exception as e:
-                print(f"Error wiping gems for user {member.display_name} ({user_id}): {e}")
+                logging.error(f"Error wiping gems for user {member.display_name} ({user_id}): {e}")
 
 
     if wiped_users:
@@ -752,7 +753,7 @@ async def handle_buy(message, db):
 
 
     except Exception as e:
-        print(f"Error during purchase transaction for user {user_id}: {e}")
+        logging.error(f"Error during purchase transaction for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to process your purchase.")    
         
 async def handle_inventory(message, db):
@@ -784,7 +785,7 @@ async def handle_inventory(message, db):
         await message.channel.send(embed=embed)
 
     except Exception as e:
-        print(f"Error retrieving inventory from Firebase: {e}")
+        logging.error(f"Error retrieving inventory from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve your inventory.")
 
          

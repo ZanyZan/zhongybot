@@ -30,6 +30,7 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
 from bot_comm import command_handlers, shop_items
+import logging
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert
 first_claim_timestamp = {}
 
@@ -37,10 +38,15 @@ try:
     cred = credentials.Certificate('/home/zanypi/env/gen-lang-client-0697881417-firebase-adminsdk-fbsvc-c6eb0253de.json')
     firebase_admin.initialize_app(cred)
     db = firestore.client()
-    print("Firebase initialized successfully!")
+    logging.info("Firebase initialized successfully!")
 except Exception as e:
-    print(f"Error initializing Firebase: {e}")
+    logging.error(f"Error initializing Firebase: {e}")
     db = None # Set db to None if initialization fails
+
+# Configure logging
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    )
 
 client = discord.Client(intents=intents)
 my_secret = os.getenv("DISCORD_TOKEN")
@@ -72,7 +78,7 @@ async def spawn_gem():
             is_sparkly = random.randint(1,5)
             if is_sparkly <= 1:
                 message_content = f"Wow! {sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode} A shiny gem has appeared! Go claim it!"
-                print("Sparkly gem spawned!")
+                logging.info("Sparkly gem spawned!")
             else:
                 message_content = f"A wild {gem_emoji_unicode} has appeared! Go claim it!"
                 print("Regular gem spawned.")
@@ -82,14 +88,14 @@ async def spawn_gem():
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
             first_claim_timestamp[spawned_gem_message_id] = None
-            print(f"Gem spawn message sent with ID {spawned_gem_message_id}")
+            logging.info(f"Gem spawn message sent with ID {spawned_gem_message_id}")
         except Exception as e:
-            print(f"Error sending gem spawn message: {e}")
+            logging.error(f"Error sending gem spawn message: {e}")
     else:
-        print(f"Channel with ID {gem_spawn_channel_id} not found.")
+        logging.warning(f"Channel with ID {gem_spawn_channel_id} not found.")
 
     # After spawning a gem, reschedule the loop with a new random interval
-    seconds=random.randint(min_gem_spawn_interval, max_gem_spawn_interval)
+    seconds = random.randint(min_gem_spawn_interval, max_gem_spawn_interval)
     spawn_gem.change_interval(seconds=seconds)
     print(f"Next gem will spawn in {convert(seconds)}")
 
@@ -102,7 +108,7 @@ async def manual_gem_spawn():
             is_sparkly = random.randint(1,5)
             if is_sparkly <= 1:
                 message_content = f"Wow! {sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode} A shiny gem has appeared! Go claim it!"
-                print("Sparkly gem spawned!")
+                logging.info("Sparkly gem spawned!")
             else:
                 message_content = f"A wild {gem_emoji_unicode} has appeared! Go claim it!"
                 print("Regular gem spawned.")
@@ -112,9 +118,9 @@ async def manual_gem_spawn():
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
             first_claim_timestamp[spawned_gem_message_id] = None
-            print(f"Gem spawn message sent with ID {spawned_gem_message_id}")
+            logging.info(f"Gem spawn message sent with ID {spawned_gem_message_id}")
         except Exception as e:
-            print(f"Error sending gem spawn message: {e}")
+            logging.error(f"Error sending gem spawn message: {e}")
 
 @client.event
 async def on_ready():
@@ -124,7 +130,7 @@ async def on_ready():
   update_my_time.start()
   client.loop.create_task(start_gem_spawning())  # Start the gem spawn task
 
-  print("logged in as {0.user}".format(client))
+  logging.info("logged in as {0.user}".format(client))
 
 
 async def start_gem_spawning():
@@ -134,14 +140,14 @@ async def start_gem_spawning():
     await client.wait_until_ready()
     # Calculate a random initial delay (using your min/max intervals)
     initial_delay = random.randint(min_gem_spawn_interval, max_gem_spawn_interval)
-    print(f"Waiting for initial gem spawn delay of {convert(initial_delay)}")
+    logging.info(f"Waiting for initial gem spawn delay of {convert(initial_delay)}")
     await asyncio.sleep(initial_delay)
 
     # Set the first interval for the loop and start it
     # You might want to set a new random interval here for the first actual spawn
     spawn_gem.change_interval(seconds=random.randint(min_gem_spawn_interval, max_gem_spawn_interval))
     spawn_gem.start()
-    print("Gem spawn loop started.")
+    logging.info("Gem spawn loop started.")
 
 
 @client.event
@@ -203,7 +209,7 @@ async def on_message(message):
 
   if message.author.id == 257995877367414785:
       roll = random.randint(1, 100)
-      print("Ub3r rolled", roll)
+      logging.info(f"Ub3r rolled {roll}")
       if roll <= 7:
           text = message.content.lower()
           response = capi_sentence(text) # Using capi_sentence from helpers
@@ -211,7 +217,7 @@ async def on_message(message):
   elif message.author.id == 249678251226562561:
       roll = random.randint(1,100)
       print("Harri rolled", roll)
-      if roll <= 1:
+      if roll <= 3:
           roll = random.randint(1,4)
           if roll <= 3:
               text = message.content.lower()
@@ -230,7 +236,7 @@ async def on_message(message):
                           await message.channel.send(chunk)
 
                   except Exception as e:
-                      print(f"An error occurred during custom Gemini interaction: {e}")
+                      logging.error(f"An error occurred during custom Gemini interaction: {e}")
                       await message.channel.send("Sorry, I couldn't generate a response for you at this time.")
  
 @client.event
@@ -268,7 +274,7 @@ async def on_reaction_add(reaction, user):
             if first_claim_timestamp.get(message_id) is None:
                 # This is the first claim, record the timestamp
                 first_claim_timestamp[message_id] = current_time
-                print(f"First claim on gem message {message_id} at {current_time}")
+                logging.info(f"First claim on gem message {message_id} at {current_time}")
 
                 # Determine if it was a sparkly gem based on the message content
                 is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
@@ -276,10 +282,10 @@ async def on_reaction_add(reaction, user):
                 # Determine base gem count
                 if is_sparkly_claim:
                     base_gem_count = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
-                    print(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+                    logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
                 else:
                     base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
-                    print(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+                    logging.info(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
 
 
                 # Check user's inventory for gem acquisition booster
@@ -291,13 +297,13 @@ async def on_reaction_add(reaction, user):
                     gem_booster_item = inventory.get("gem_booster")
                     if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
                          booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
-                         acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0)
-                         print(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
+                         acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0) # Default multiplier
+                         logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
 
 
                 # Calculate final gem count after applying multiplier using ceiling formula
                 gemcount = math.ceil(base_gem_count * acquisition_multiplier)
-                print(f"Final gem count after multiplier: {gemcount}")
+                logging.info(f"Final gem count after multiplier: {gemcount}")
 
 
                 try:
@@ -322,10 +328,10 @@ async def on_reaction_add(reaction, user):
                     user_gem_counts_ref.set(update_data, merge=True)
 
                     await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
-                    print(f"ID:{user.id} claimed the gem")
+                    logging.info(f"ID:{user.id} claimed the gem")
                 except Exception as e:
-                    print(f"Error recording gem claim in Firebase: {e}")
-                    await channel.send("An error occurred while trying to claim the gem.")
+                    logging.error(f"Error recording gem claim in Firebase: {e}")
+                    await channel.send("A server error occurred while trying to claim the gem.")
 
             else:
                 # Not the first claim, check if within 30 seconds of the first claim
@@ -338,10 +344,10 @@ async def on_reaction_add(reaction, user):
                     # Determine base gem count
                     if is_sparkly_claim:
                         base_gem_count = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
-                        print(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+                        logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
                     else:
                         base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
-                        print(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+                        logging.info(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
 
 
                     # Check user's inventory for gem acquisition booster
@@ -352,12 +358,12 @@ async def on_reaction_add(reaction, user):
                         inventory = user_doc.to_dict().get('inventory', {})
                         gem_booster_item = inventory.get("gem_booster")
                         if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
-                            booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
-                            acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0)
-                            print(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
+                             booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
+                             acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0) # Default multiplier
+                             logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
 
                     # Calculate final gem count after applying multiplier using ceiling formula
-                    gemcount = math.ceil(base_gem_count * acquisition_multiplier)
+                    gemcount = math.ceil(base_gem_count * acquisition_multiplier) 
                     print(f"Final gem count after multiplier: {gemcount}")
 
                     try:
@@ -379,13 +385,13 @@ async def on_reaction_add(reaction, user):
                         }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
 
                         await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
-                        print(f"ID:{user.id} claimed the gem")
+                        logging.info(f"ID:{user.id} claimed the gem")
                     except Exception as e:
-                        print(f"Error recording gem claim in Firebase: {e}")
-                        await channel.send("An error occurred while trying to claim the gem.")
+                        logging.error(f"Error recording gem claim in Firebase: {e}")
+                        await channel.send("A server error occurred while trying to claim the gem.")
                 else:
-                    print(f"Reaction on gem message {message_id} by {user.display_name} was outside the 30-second window based on the first claim.")
+                    logging.info(f"Reaction on gem message {message_id} by {user.display_name} was outside the 30-second window based on the first claim.")
 
         else:
-            print(f"User {user.display_name} has already claimed gem {message_id}.")
+            logging.info(f"User {user.display_name} has already claimed gem {message_id}.")
 client.run(my_secret)
