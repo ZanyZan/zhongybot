@@ -10,6 +10,7 @@ import re
 import google.generativeai as genai
 import asyncio
 import math
+import sys
 from dotenv import load_dotenv
 from google.cloud.firestore_v1.base_query import FieldFilter
 aui = [90936340002119680, 264507975568195587]
@@ -46,7 +47,10 @@ except Exception as e:
 # Configure logging
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
-                    )
+                    handlers=[
+                        logging.FileHandler("zhongybot.log"),
+                        logging.StreamHandler(sys.stdout)
+                    ])
 
 client = discord.Client(intents=intents)
 my_secret = os.getenv("DISCORD_TOKEN")

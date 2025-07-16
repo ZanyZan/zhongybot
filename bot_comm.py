@@ -565,7 +565,7 @@ async def handle_slots(message, db):
                     add_winnings_transaction(db.transaction(), user_gem_counts_ref, total_winnings)
 
                 # Fetch the user's updated gem count after the spin and potential winnings
-                updated_doc = user_gem_counts_ref.get(field_paths=[FieldPath(['gem_count'])]) # Fetch only the gem_count field
+                updated_doc = user_gem_counts_ref.get(field_paths=[FieldPath('gem_count')])  # Fetch only the gem_count field
                 updated_gem_count = updated_doc.to_dict().get('gem_count', 0) if updated_doc.exists else 0
 
                 # Construct and send the final message
