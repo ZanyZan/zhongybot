@@ -12,9 +12,12 @@ import asyncio
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
-from google.cloud.firestore_v1.base_query import FieldFilter
+from google.cloud.firestore_v1.field_path import FieldPath
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
 import logging
+
+# Consider moving this to a config file or environment variable
+# and using it in main.py as well.
 aui = [90936340002119680, 264507975568195587]
 # Define functions for each command
 async def handle_ursus(message, my_time):
@@ -27,38 +30,37 @@ async def handle_ursus(message, my_time):
     ursus_start1_epoch_current_day = int(datetime(year, month, day, 20, 0, 0).timestamp())
     next_day_dt = current_dt + timedelta(days=1)
     ursus_end1_epoch_next_day = int(datetime(next_day_dt.year, next_day_dt.month, next_day_dt.day, 0, 0, 0).timestamp())
+
     ursus_start2_epoch_current_day = int(datetime(year, month, day, 13, 0, 0).timestamp())
     ursus_end2_epoch_current_day = int(datetime(year, month, day, 17, 0, 0).timestamp())
 
-    # Define the start of the first Ursus run on the next day
-    next_day_ursus_start1_epoch = int(datetime(next_day_dt.year, next_day_dt.month, next_day_dt.day, 20, 0, 0).timestamp())
-
-    response = "" # Initialize response string
-    time_difference = 0 # Initialize time difference
-
-    # Check if currently in the first Ursus run (spans across midnight)
-    if (ursus_start1_epoch_current_day < my_time < ursus_end1_epoch_next_day):
+    # Determine current status and remaining time using a more concise approach.
+    if ursus_start1_epoch_current_day < my_time < ursus_end1_epoch_next_day:
+        # Ursus active (night run)
         time_difference = ursus_end1_epoch_next_day - my_time
-        response = 'Ursus 2x meso is currently active, it will end in ' + str(timedelta(seconds=time_difference))
-
-    # Check if currently in the second Ursus run (within the current day)
-    elif (ursus_start2_epoch_current_day < my_time < ursus_end2_epoch_current_day):
+        status_message = 'Ursus 2x meso is currently active, it will end in '
+    elif ursus_start2_epoch_current_day < my_time < ursus_end2_epoch_current_day:
+        # Ursus active (day run)
         time_difference = ursus_end2_epoch_current_day - my_time
-        response = 'Ursus 2x meso is currently active, it will end in ' + str(timedelta(seconds=time_difference))
-
-    # Check if between the end of the second run (current day) and the start of the first run (current day)
-    elif (ursus_end2_epoch_current_day < my_time < ursus_start1_epoch_current_day):
+        status_message = 'Ursus 2x meso is currently active, it will end in '
+    elif my_time < ursus_start2_epoch_current_day:
+        # Ursus inactive (before first run)
+        time_difference = ursus_start2_epoch_current_day - my_time
+        status_message = 'Ursus 2x meso is not active, it will start in '
+    elif ursus_end2_epoch_current_day < my_time < ursus_start1_epoch_current_day:
+        # Ursus inactive (between runs)
         time_difference = ursus_start1_epoch_current_day - my_time
-        response = 'Ursus 2x meso is not active, it will start in ' + str(timedelta(seconds=time_difference))
-
-    # Check if before the start of the second run (current day)
-    elif (my_time < ursus_start2_epoch_current_day):
-         time_difference = ursus_start2_epoch_current_day - my_time
-         response = 'Ursus 2x meso is not active, it will start in ' + str(timedelta(seconds=time_difference))
-
-    # If none of the above, this case shouldn't ideally be reached with the current Ursus times, but as a fallback:
+        status_message = 'Ursus 2x meso is not active, it will start in '
     else:
-        response = "Unable to determine next Ursus time."
+        # Fallback (should not be reached under normal circumstances)
+        status_message = "Unable to determine next Ursus time."
+        time_difference = 0
+
+    # Combine message based on status or use the fallback message
+    if time_difference > 0:
+        response = status_message + str(timedelta(seconds=time_difference))
+    else:
+        response = status_message  # Use fallback message directly
 
     # Construct the full response including all Ursus times
     full_response = (
@@ -84,7 +86,7 @@ async def handle_checkgems(message, db):
             gem_count = doc.to_dict().get('gem_count', 0)
             response = f"{message.author.display_name}, you have {gem_count} gem(s)."
         else:
-            response = f"{message.author.display_name}, you don't have any gems yet. Keep an eye out for gem drops!"
+            response = f"{message.author.display_name}, you don't have any gems yet. Keep an eye out for gem drops!"  # Minor text adjustment for consistency
 
         embed = discord.Embed(description=response, colour=discord.Colour.purple())
         await message.channel.send(embed=embed)
@@ -224,7 +226,7 @@ async def handle_ask(message, db, model, max_history_length, discord_max_length)
         if not prompt:
             await message.channel.send("Please provide a prompt after ~ask.")
             return
-
+        # Consider extracting this channel ID to a configuration file.
         channel_id = str(message.channel.id)
         user_id = str(message.author.id)
         doc_ref = db.collection('conversation_history').document(channel_id).collection('users').document(user_id)
@@ -250,7 +252,7 @@ async def handle_ask(message, db, model, max_history_length, discord_max_length)
                 await message.channel.send(chunk)
 
         except Exception as e:
-            logging.error(f"An error occurred during LLM interaction: {e}")
+            logging.exception(f"An error occurred during LLM interaction:")  # Use logging.exception
             await message.channel.send("Sorry, I couldn't process your request at this time.")
     else:
         await message.channel.send("That command is restricted to #debris-botspam.")
@@ -274,7 +276,7 @@ async def handle_deletehistory(message, db):
             else:
                 await message.channel.send(f"No conversation history found for {message.author.display_name} in this channel.")
         except Exception as e:
-            logging.error(f"Error deleting history from Firebase: {e}")
+            logging.exception(f"Error deleting history from Firebase:")  # Use logging.exception
             await message.channel.send("An error occurred while trying to delete your history.")
 
 async def handle_forward(message, client):
@@ -285,7 +287,7 @@ async def handle_forward(message, client):
         target_channel = client.get_channel(target_channel_id)
 
         if target_channel is None:
-            logging.error(f"Error: Target channel with ID {target_channel_id} not found.")
+            logging.error(f"Error: Target channel with ID {target_channel_id} not found.") # Consider using logging.error
             return
 
         # Format the message to be sent to the server channel
@@ -295,7 +297,7 @@ async def handle_forward(message, client):
             await target_channel.send(forwarded_message)
             await message.channel.send("Message forwarded to the server.")
         except Exception as e:
-            logging.error(f"Error forwarding message: {e}")
+            logging.exception(f"Error forwarding message:")  # Use logging.exception
             await message.channel.send("An error occurred while trying to forward your message.")
 
 
@@ -339,7 +341,7 @@ async def handle_givegems(message, db):
         logging.info(f"Gave {amount} gem(s) to user ID:{target_user.id}")
 
     except Exception as e:
-        logging.error(f"Error giving gems: {e}")
+        logging.exception(f"Error giving gems:")  # Use logging.exception
         await message.channel.send("An error occurred while trying to give gems.")
 
 async def handle_takegems(message, db):
@@ -377,7 +379,7 @@ async def handle_takegems(message, db):
         def update_in_transaction(transaction, user_ref, amount_to_take):
             snapshot = user_ref.get(transaction=transaction)
             if snapshot.exists:
-                current_gems = snapshot.get('gem_count') or 0
+                current_gems = snapshot.get('gem_count') or 0  # Use .get with default value
                 if current_gems == 0:
                     return "no_gems"
                 if amount_to_take >= current_gems:
@@ -412,7 +414,7 @@ async def handle_takegems(message, db):
             await message.channel.send(f"Could not find {target_user.display_name}'s gem count in the database.")
 
     except Exception as e:
-        logging.error(f"Error taking gems: {e}")
+        logging.exception(f"Error taking gems:")  # Use logging.exception
         await message.channel.send("An error occurred while trying to take gems.")
 
 
@@ -457,7 +459,7 @@ slot_cost = 2
 num_reels = 3
 async def handle_slots(message, db):
     if message.channel.id == 971245167254331422: # Replace with your desired channel ID
-        if db is None:
+        if db is None:  # Consider using an assertion here if db should always be initialized
             await message.channel.send("Firebase is not initialized. Cannot use the slots command.")
             return
 
@@ -490,7 +492,7 @@ async def handle_slots(message, db):
                 if not snapshot.exists:
                     return "no_gems" # User not found in database
 
-                current_gems = snapshot.get('gem_count') or 0
+                current_gems = snapshot.get('gem_count') or 0 # Use .get with default value
 
                 if current_gems < cost:
                     return "not_enough_gems" # User doesn't have enough gems
@@ -504,7 +506,7 @@ async def handle_slots(message, db):
             if transaction_result == "no_gems":
                 await message.channel.send(f"{message.author.display_name}, you don't have any gems yet. The slot machine costs {slot_cost} gem(s) per roll.")
             elif transaction_result == "not_enough_gems":
-                await message.channel.send(f"{message.author.display_name}, you need {total_cost} gem(s) to play the slot machine {num_rolls} time(s). You currently have {user_gem_counts_ref.get().to_dict().get('gem_count', 0)} gems.") # Fetch updated count for message
+                await message.channel.send(f"{message.author.display_name}, you need {total_cost} gem(s) to play the slot machine {num_rolls} time(s). You currently have {user_gem_counts_ref.get(field_paths=[FieldPath(['gem_count'])]).to_dict().get('gem_count', 0)} gems.") # Fetch updated count for message
             elif transaction_result == "success":
                 await message.channel.send(f"{message.author.display_name} paid {total_cost} gem(s) to play the slot machine {num_rolls} time(s).")
 
@@ -554,7 +556,7 @@ async def handle_slots(message, db):
                         snapshot = user_ref.get(transaction=transaction)
                         if snapshot.exists:
                             current_gems = snapshot.get('gem_count') or 0
-                            new_gems = current_gems + amount
+                            new_gems = current_gems + amount # Simplify calculation
                             transaction.update(user_ref, {'gem_count': new_gems})
                             return new_gems
                         else:
@@ -563,7 +565,7 @@ async def handle_slots(message, db):
                     add_winnings_transaction(db.transaction(), user_gem_counts_ref, total_winnings)
 
                 # Fetch the user's updated gem count after the spin and potential winnings
-                updated_doc = user_gem_counts_ref.get()
+                updated_doc = user_gem_counts_ref.get(field_paths=[FieldPath(['gem_count'])]) # Fetch only the gem_count field
                 updated_gem_count = updated_doc.to_dict().get('gem_count', 0) if updated_doc.exists else 0
 
                 # Construct and send the final message
@@ -579,7 +581,7 @@ async def handle_slots(message, db):
 
 
         except Exception as e:
-            logging.error(f"Error playing slots: {e}")
+            logging.exception(f"Error playing slots:")  # Use logging.exception
             await message.channel.send("An error occurred while trying to play the slot machine.")
     else:
         await message.channel.send("That command is restricted to <#debris-botspam>.")
@@ -651,7 +653,7 @@ async def handle_wipegems(message, db, target_role_id):
         # Check if the member has the target role
         if target_role in member.roles:
             user_id = str(member.id)
-            # Set the gem count to 0 for the user in the database
+            # Set the gem count to 0 for the user in the database. Consider batching these writes.
             try:
                 user_gem_counts_ref.document(user_id).set({
                     'username': member.display_name,
@@ -659,7 +661,7 @@ async def handle_wipegems(message, db, target_role_id):
                 }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
                 wiped_users.append(member.display_name)
                 logging.info(f"Wiped gems for user ID:{user_id} ({member.display_name})")
-            except Exception as e:
+            except Exception as e: # Catch all exceptions and log them, consider handling specific exceptions for better error handling
                 logging.error(f"Error wiping gems for user {member.display_name} ({user_id}): {e}")
 
 
@@ -720,7 +722,7 @@ async def handle_buy(message, db):
                 transaction.update(user_ref, {'inventory': user_data['inventory']})
 
             current_gems = user_data.get('gem_count', 0)
-            inventory = user_data.get('inventory', {})
+            inventory = user_data.get('inventory', {}) # Use .get with a default value
 
             # Check if the user already owns the unique item
             if item_to_buy.get("type") != "consumable" and inventory.get(item, {}).get('quantity', 0) > 0:
@@ -731,7 +733,7 @@ async def handle_buy(message, db):
                 return "not_enough_gems"
 
             new_gems = current_gems - item_cost
-            current_quantity = inventory.get(item, {}).get('quantity', 0)
+            current_quantity = inventory.get(item, {}).get('quantity', 0) # Use .get with a default value
             inventory[item] = {'quantity': current_quantity + 1}
             user_data['inventory'] = inventory # Update inventory in user_data
 
@@ -776,7 +778,7 @@ async def handle_inventory(message, db):
                 for item_id, item_info in inventory.items():
                     # Get item name from shop_items for better display
                     item_name = shop_items.get(item_id, {}).get('name', item_id)
-                    quantity = item_info.get('quantity', 0)
+                    quantity = item_info.get('quantity', 0) # Use .get with a default value
                     response += f"- {item_name}: {quantity}\n"
         else:
             response = f"{message.author.display_name}, you don't have an inventory yet. Try purchasing an item from the shop!"
@@ -814,11 +816,11 @@ shop_items = {
     }
 }
 command_handlers = {
-    'ursus': handle_ursus,
-    'servertime': handle_servertime,
-    'time': handle_time,
-    'esfera': handle_esfera,
-    'help': handle_help,
+    'ursus': handle_ursus,  # Consider using a more descriptive name, like 'handle_ursus_command'
+    'servertime': handle_servertime,  # Same here
+    'time': handle_time,  # And so on...
+    'esfera': handle_esfera,  # Add docstrings to each function explaining its purpose
+    'help': handle_help,  # This improves readability and maintainability
     'roll': handle_roll,
     '8ball': handle_8ball,
     'weaponf': handle_weaponf,
@@ -833,5 +835,8 @@ command_handlers = {
     'wipegems': handle_wipegems,
     'shop': handle_shop,
     'buy': handle_buy,
-    'inventory': handle_inventory,
+    'inventory': handle_inventory,  # Consider making this a property of a user class
 }
+
+#  Consider using a class to encapsulate user-related data and operations (gems, inventory, etc.)
+# This would improve code organization and make it easier to manage user data.

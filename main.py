@@ -69,7 +69,7 @@ async def update_my_time():
 async def spawn_gem():
     """
     Randomly spawns a gem emoji in a specified channel for users to claim by reacting.
-    """
+    """    
     await client.wait_until_ready()
 
     channel = client.get_channel(gem_spawn_channel_id)
@@ -101,7 +101,7 @@ async def spawn_gem():
 
 
 async def manual_gem_spawn():
-    await client.wait_until_ready()
+    """Manually spawn a gem (triggered by admin command)."""
     channel = client.get_channel(gem_spawn_channel_id)
     if channel:
         try:
@@ -162,7 +162,7 @@ async def on_message(message):
   if (message.author == client.user):
     return
   elif re.search(r'dex.*?(?:is )?(free|{})'.format(re.escape(free_emoji_unicode)), message.content.lower(), re.DOTALL):
-    response = f'No it isn\'t'
+    response = 'No it isn\'t'
     new = await message.reply(response)
 
   # Check if the message is a private message
@@ -203,7 +203,7 @@ async def on_message(message):
 
   if message.content.lower() == 'aran succ' and (875235978971861002 in list(
     role.id for role in message.author.roles)):
-    response = f'Hey {message.author.display_name}, heard you play Aran. You have my condolences. You should gather everyone and go Hunter\'s Prey Changseop for this travesty'
+    response = f"Hey {message.author.display_name}, heard you play Aran. You have my condolences. You should gather everyone and go Hunter's Prey Changseop for this travesty"
     new = await message.reply(response)
     await new.add_reaction('<:FeelsAranMan:852726957091323934>')
 
@@ -227,7 +227,7 @@ async def on_message(message):
               if model:  # Ensure the Gemini model is initialized
                   try:
                       # Define your custom Gemini prompt here
-                      gemini_prompt = f"In a way that shuts him up remind the user named Harri that he has a 70 boss damage familiar card, which is extremely rare. You are the one addressing him directly and make it short"
+                      gemini_prompt = "In a way that shuts him up remind the user named Harri that he has a 70 boss damage familiar card, which is extremely rare. You are the one addressing him directly and make it short"
 
                       response = model.generate_content([gemini_prompt])
                       # Split the response if it's too long for Discord
@@ -270,14 +270,14 @@ async def on_reaction_add(reaction, user):
         if not claimed_by_user:
             current_time = datetime.now(timezone.utc)
 
-            # Check if this is the first claim for this gem message
-            if first_claim_timestamp.get(message_id) is None:
-                # This is the first claim, record the timestamp
+            # Get the timestamp of the first claim, if any.
+            first_claim_time = first_claim_timestamp.get(message_id)
+
+            if first_claim_time is None:  # This means it's the first claim.
+                # Record the timestamp for this first claim.
                 first_claim_timestamp[message_id] = current_time
                 logging.info(f"First claim on gem message {message_id} at {current_time}")
-
-                # Determine if it was a sparkly gem based on the message content
-                is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
+                is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content  # Determine if it's a sparkly gem.
 
                 # Determine base gem count
                 if is_sparkly_claim:
@@ -333,10 +333,7 @@ async def on_reaction_add(reaction, user):
                     logging.error(f"Error recording gem claim in Firebase: {e}")
                     await channel.send("A server error occurred while trying to claim the gem.")
 
-            else:
-                # Not the first claim, check if within 30 seconds of the first claim
-                time_difference = (current_time - first_claim_timestamp[message_id]).total_seconds()
-
+            elif (current_time - first_claim_time).total_seconds() <= 30: # Not the first claim, check if within 30 seconds.
                 if time_difference <= 30:
                      # Determine if it was a sparkly gem based on the message content
                     is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
