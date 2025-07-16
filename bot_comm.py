@@ -1,6 +1,7 @@
 import discord
 import os
 import time
+import sys
 from discord.ext import tasks
 from datetime import datetime, timedelta, timezone
 import pytz
@@ -15,7 +16,12 @@ from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
 import logging
-
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler("zhongybot.log"),
+                        logging.StreamHandler(sys.stdout)
+                    ])
 # Consider moving this to a config file or environment variable
 # and using it in main.py as well.
 aui = [90936340002119680, 264507975568195587]
@@ -552,23 +558,16 @@ async def handle_slots(message, db):
                 # If the user wins, add the total winnings to their gem count
                 if total_winnings > 0:
                     @firestore.transactional
-                    def add_winnings_transaction(transaction, user_ref, amount):
-                        snapshot = user_ref.get(transaction=transaction)
-                        if snapshot.exists:
-                            current_gems = snapshot.get('gem_count') or 0
-                            new_gems = current_gems + amount # Simplify calculation
-                            transaction.update(user_ref, {'gem_count': new_gems})
-                            return new_gems
-                        else:
-                            return None
+                    def add_winnings_transaction(transaction, user_ref, winnings):
+                        transaction.update(user_ref, {'gem_count': firestore.Increment(winnings)})
+                        return "success"  # Indicate successful transaction
 
                     add_winnings_transaction(db.transaction(), user_gem_counts_ref, total_winnings)
 
-                # Fetch the user's updated gem count after the spin and potential winnings
-                updated_doc = user_gem_counts_ref.get(field_paths=[FieldPath('gem_count')])  # Fetch only the gem_count field
+                updated_doc = user_gem_counts_ref.get()
                 updated_gem_count = updated_doc.to_dict().get('gem_count', 0) if updated_doc.exists else 0
 
-                # Construct and send the final message
+                 # Construct and send the final message
                 final_message = results_message
                 if total_winnings > 0:
                      final_message += f"\nTotal winnings: {total_winnings} gem(s)."
