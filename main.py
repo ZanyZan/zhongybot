@@ -334,58 +334,57 @@ async def on_reaction_add(reaction, user):
                     await channel.send("A server error occurred while trying to claim the gem.")
 
             elif (current_time - first_claim_time).total_seconds() <= 30: # Not the first claim, check if within 30 seconds.
-                if time_difference <= 30:
-                     # Determine if it was a sparkly gem based on the message content
-                    is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
+                    # Determine if it was a sparkly gem based on the message content
+                is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
 
-                    # Determine base gem count
-                    if is_sparkly_claim:
-                        base_gem_count = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
-                        logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
-                    else:
-                        base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
-                        logging.info(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+                # Determine base gem count
+                if is_sparkly_claim:
+                    base_gem_count = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
+                    logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+                else:
+                    base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
+                    logging.info(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
 
 
-                    # Check user's inventory for gem acquisition booster
-                    user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
-                    user_doc = user_doc_ref.get()
-                    acquisition_multiplier = 1.0 # Default multiplier
-                    if user_doc.exists:
-                        inventory = user_doc.to_dict().get('inventory', {})
-                        gem_booster_item = inventory.get("gem_booster")
-                        if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
-                             booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
-                             acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0) # Default multiplier
-                             logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
+                # Check user's inventory for gem acquisition booster
+                user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
+                user_doc = user_doc_ref.get()
+                acquisition_multiplier = 1.0 # Default multiplier
+                if user_doc.exists:
+                    inventory = user_doc.to_dict().get('inventory', {})
+                    gem_booster_item = inventory.get("gem_booster")
+                    if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
+                            booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
+                            acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0) # Default multiplier
+                            logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
 
-                    # Calculate final gem count after applying multiplier using ceiling formula
-                    gemcount = math.ceil(base_gem_count * acquisition_multiplier) 
-                    print(f"Final gem count after multiplier: {gemcount}")
+                # Calculate final gem count after applying multiplier using ceiling formula
+                gemcount = math.ceil(base_gem_count * acquisition_multiplier) 
+                print(f"Final gem count after multiplier: {gemcount}")
 
-                    try:
-                        # Record the claim in Firebase
-                        gem_claims_ref.add({
-                            'message_id': message_id,
-                            'user_id': user.id,
-                            'username': user.display_name,
-                            'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
-                        })
+                try:
+                    # Record the claim in Firebase
+                    gem_claims_ref.add({
+                        'message_id': message_id,
+                        'user_id': user.id,
+                        'username': user.display_name,
+                        'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
+                    })
 
-                        # Update user's gem count and ensure inventory is present
-                        user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
-                        user_gem_counts_ref.set({
-                            'username': user.display_name,
-                            'gem_count': firestore.Increment(gemcount)
-                            # Inventory is not explicitly added here as it should be initialized on the first claim
-                            # and merge=True will preserve existing inventory data
-                        }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
+                    # Update user's gem count and ensure inventory is present
+                    user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
+                    user_gem_counts_ref.set({
+                        'username': user.display_name,
+                        'gem_count': firestore.Increment(gemcount)
+                        # Inventory is not explicitly added here as it should be initialized on the first claim
+                        # and merge=True will preserve existing inventory data
+                    }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
 
-                        await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
-                        logging.info(f"ID:{user.id} claimed the gem")
-                    except Exception as e:
-                        logging.error(f"Error recording gem claim in Firebase: {e}")
-                        await channel.send("A server error occurred while trying to claim the gem.")
+                    await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
+                    logging.info(f"ID:{user.id} claimed the gem")
+                except Exception as e:
+                    logging.error(f"Error recording gem claim in Firebase: {e}")
+                    await channel.send("A server error occurred while trying to claim the gem.")
                 else:
                     logging.info(f"Reaction on gem message {message_id} by {user.display_name} was outside the 30-second window based on the first claim.")
 
