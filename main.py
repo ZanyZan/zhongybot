@@ -2,9 +2,7 @@ import discord
 import os
 from discord.ext import tasks
 import time
-from datetime import datetime, timedelta, timezone
-import pytz
-import operator
+from datetime import datetime, timezone
 import random
 import re
 import google.generativeai as genai
@@ -91,6 +89,7 @@ async def spawn_gem():
             await message.add_reaction(gem_emoji_unicode)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
+            first_claim_timestamp.clear()  # Clear old entries before adding a new one
             first_claim_timestamp[spawned_gem_message_id] = None
             logging.info(f"Gem spawn message sent with ID {spawned_gem_message_id}")
         except Exception as e:
@@ -121,6 +120,7 @@ async def manual_gem_spawn():
             await message.add_reaction(gem_emoji_unicode)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
+            first_claim_timestamp.clear()  # Clear old entries before adding a new one
             first_claim_timestamp[spawned_gem_message_id] = None
             logging.info(f"Gem spawn message sent with ID {spawned_gem_message_id}")
         except Exception as e:
@@ -219,9 +219,9 @@ async def on_message(message):
           response = capi_sentence(text) # Using capi_sentence from helpers
           await message.reply(response, mention_author=False)
   elif message.author.id == 249678251226562561:
-      roll = random.randint(1,100)
+      roll = random.randint(1,1000)
       print("Harri rolled", roll)
-      if roll <= 3:
+      if roll <= 8:
           roll = random.randint(1,4)
           if roll <= 3:
               text = message.content.lower()

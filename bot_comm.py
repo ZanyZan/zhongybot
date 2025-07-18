@@ -1,17 +1,9 @@
 import discord
-import os
-import time
 import sys
 from discord.ext import tasks
 from datetime import datetime, timedelta, timezone
-import pytz
-import operator
 import random
 import weapons as wp
-import re
-import asyncio
-import firebase_admin
-from firebase_admin import credentials
 from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
@@ -173,27 +165,30 @@ async def handle_8ball(message):
     split_message = message.content.split('8ball')
     question = split_message[1]
     answer_dict = {
-        0: "It is certain",
-        1: "It is decidedly so",
-        2: "Without a doubt",
-        3: "Yes - definitely",
-        4: "You may rely on it",
-        5: "As I see it, yes",
-        6: "Most likely",
-        7: "Outlook good",
-        8: "Yes",
-        9: "Signs point to yes",
-        10: "Reply hazy, try again",
-        11: "Ask again later",
-        12: "Better not tell you now",
-        13: "Cannot predict now",
-        14: "Concentrate and ask again",
-        15: "Don't count on it",
-        16: "My reply is no",
-        17: "My sources say no",
-        18: "Outlook not so good",
-        19: "Very doubtful",
-        20: "Ask Greg about it",
+        # Affirmative
+        0: "It is certain. As certain as taxes and server maintenance.",
+        1: "It is decidedly so. The RNG gods are smiling upon you.",
+        2: "Without a doubt. Go for it!",
+        3: "Yes, definitely. You can bet your meso on it.",
+        4: "You may rely on it. It's a sure thing.",
+        5: "As I see it, yes. The outlook is as good as hitting a double prime line.",
+        6: "Most likely. I'd put money on it, if I had any.",
+        7: "Outlook good. It's a green light from me.",
+        8: "Yes. Simple as that.",
+        9: "Signs point to yes, but don't quote me on that.",
+        # Non-committal
+        10: "Reply hazy, try again. My crystal ball is as foggy as a map full of kishin smoke.",
+        11: "Ask again later. I'm in the middle of a boss fight.",
+        12: "Better not tell you now... spoilers!",
+        13: "Cannot predict now. I'm getting server lag on that request.",
+        14: "Concentrate and ask again. Maybe sacrifice a Pitched Boss item to the RNG gods first.",
+        # Negative
+        15: "Don't count on it. The odds are worse than getting a pitched drop.",
+        16: "My reply is a resounding NO.",
+        17: "My sources (who are totally not in this room) say no.",
+        18: "Outlook not so good. It's like trying to solo Black Mage with a level 10 character.",
+        19: "Very doubtful. I have a better chance of understanding the lore.",
+        20: "Ask Greg about it. He probably knows.", # Special
     }
     roll = random.randint(0, 20)
     answer = answer_dict[roll]
