@@ -700,7 +700,7 @@ async def handle_wipegems(message, db, target_role_id):
         
 async def handle_shop(message):
     """Displays the items available in the shop."""
-    if message.channel.id != config.BOT_SPAM_CHANNEL_ID:
+    if message.channel.id not in config.BOT_SPAM_CHANNEL_ID:
         await message.channel.send(f"That command is restricted to <#{config.BOT_SPAM_CHANNEL_ID}>.")
         return
 

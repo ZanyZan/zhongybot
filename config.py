@@ -39,7 +39,7 @@ GEMINI_MODEL_NAME = _get_env_var("GEMINI_MODEL_NAME", default="models/gemini-2.5
 # --- Discord IDs ---
 ADMIN_USER_IDS = _get_env_var("ADMIN_USER_IDS", var_type=list_int)
 GEM_SPAWN_CHANNEL_ID = _get_env_var("GEM_SPAWN_CHANNEL_ID", var_type=int)
-BOT_SPAM_CHANNEL_ID = _get_env_var("BOT_SPAM_CHANNEL_ID", var_type=int)
+BOT_SPAM_CHANNEL_ID = _get_env_var("BOT_SPAM_CHANNEL_ID", var_type=list_int)
 FORWARD_CHANNEL_ID = _get_env_var("FORWARD_CHANNEL_ID", var_type=int)
 MEMBER_ROLE_ID = _get_env_var("MEMBER_ROLE_ID", var_type=int)
 UBER_USER_ID = _get_env_var("UBER_USER_ID", var_type=int)
