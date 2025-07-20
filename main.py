@@ -1,5 +1,5 @@
+import config  # Import config at the top
 import discord
-import os
 from discord.ext import tasks
 import time
 from datetime import datetime, timezone
@@ -9,32 +9,26 @@ import google.generativeai as genai
 import asyncio
 import math
 import sys
-from dotenv import load_dotenv
 from google.cloud.firestore_v1.base_query import FieldFilter
-aui = [90936340002119680, 264507975568195587]
-load_dotenv()
+
 free_emoji_unicode = '\U0001F193'
 gem_emoji_unicode = '\U0001F48E'
 sparkle_emoji_unicode = '\U00002728'
-discord_max_length = 2000
-max_history_length = 20
-min_gem_spawn_interval = 21600 #6 hours
-max_gem_spawn_interval = 43200 #12 hours
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
-gem_spawn_channel_id = 808341519714484246
 spawned_gem_message_id = 0
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
 from bot_comm import command_handlers, shop_items
 import logging
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert
+from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_acquisition_multiplier
 first_claim_timestamp = {}
 
 try:
-    cred = credentials.Certificate('/home/zanypi/env/gen-lang-client-0697881417-firebase-adminsdk-fbsvc-c6eb0253de.json')
+    cred = credentials.Certificate(config.FIREBASE_CRED_PATH)
     firebase_admin.initialize_app(cred)
     db = firestore.client()
     logging.info("Firebase initialized successfully!")
@@ -51,10 +45,8 @@ logging.basicConfig(level=logging.INFO,
                     ])
 
 client = discord.Client(intents=intents)
-my_secret = os.getenv("DISCORD_TOKEN")
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('models/gemini-2.5-flash-preview-05-20')
+genai.configure(api_key=config.GEMINI_API_KEY)
+model = genai.GenerativeModel(config.GEMINI_MODEL_NAME)
 #get the time in epoch and transform to an int to use
 my_time = int(time.time())
 
@@ -74,7 +66,7 @@ async def spawn_gem():
     """    
     await client.wait_until_ready()
 
-    channel = client.get_channel(gem_spawn_channel_id)
+    channel = client.get_channel(config.GEM_SPAWN_CHANNEL_ID)
     if channel:
         try:
             is_sparkly = random.randint(1,5)
@@ -95,17 +87,17 @@ async def spawn_gem():
         except Exception as e:
             logging.error(f"Error sending gem spawn message: {e}")
     else:
-        logging.warning(f"Channel with ID {gem_spawn_channel_id} not found.")
+        logging.warning(f"Channel with ID {config.GEM_SPAWN_CHANNEL_ID} not found.")
 
     # After spawning a gem, reschedule the loop with a new random interval
-    seconds = random.randint(min_gem_spawn_interval, max_gem_spawn_interval)
+    seconds = random.randint(config.MIN_GEM_SPAWN_INTERVAL, config.MAX_GEM_SPAWN_INTERVAL)
     spawn_gem.change_interval(seconds=seconds)
     print(f"Next gem will spawn in {convert(seconds)}")
 
 
 async def manual_gem_spawn():
     """Manually spawn a gem (triggered by admin command)."""
-    channel = client.get_channel(gem_spawn_channel_id)
+    channel = client.get_channel(config.GEM_SPAWN_CHANNEL_ID)
     if channel:
         try:
             is_sparkly = random.randint(1,5)
@@ -143,13 +135,13 @@ async def start_gem_spawning():
     """
     await client.wait_until_ready()
     # Calculate a random initial delay (using your min/max intervals)
-    initial_delay = random.randint(min_gem_spawn_interval, max_gem_spawn_interval)
+    initial_delay = random.randint(config.MIN_GEM_SPAWN_INTERVAL, config.MAX_GEM_SPAWN_INTERVAL)
     logging.info(f"Waiting for initial gem spawn delay of {convert(initial_delay)}")
     await asyncio.sleep(initial_delay)
 
     # Set the first interval for the loop and start it
     # You might want to set a new random interval here for the first actual spawn
-    spawn_gem.change_interval(seconds=random.randint(min_gem_spawn_interval, max_gem_spawn_interval))
+    spawn_gem.change_interval(seconds=random.randint(config.MIN_GEM_SPAWN_INTERVAL, config.MAX_GEM_SPAWN_INTERVAL))
     spawn_gem.start()
     logging.info("Gem spawn loop started.")
 
@@ -188,17 +180,17 @@ async def on_message(message):
       if handler:
           # Pass necessary arguments based on the command
           if command in ['ask']:
-              await handler(message, db=db, model=model, max_history_length=max_history_length, discord_max_length=discord_max_length)
+              await handler(message, db=db, model=model, max_history_length=config.MAX_HISTORY_LENGTH, discord_max_length=config.DISCORD_MAX_LENGTH)
           elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'inventory', 'daily', 'leaderboard']:
               await handler(message, db=db)
           elif command in ['ursus', 'servertime', 'time']:
               await handler(message, my_time=my_time) # Pass my_time here
           elif command in ['wipegems']:
-              await handler(message, db, 808729400920899635) #Member role id for debris
+              await handler(message, db, config.MEMBER_ROLE_ID) #Member role id for debris
           else: # For commands that don't need extra arguments
               await handler(message)
       elif command == 'spawngem':
-            if message.author.id not in aui:
+            if message.author.id not in config.ADMIN_USER_IDS:
                 await message.channel.send("You are not authorized to use this command.")
                 return
             else:
@@ -211,14 +203,14 @@ async def on_message(message):
     new = await message.reply(response)
     await new.add_reaction('<:FeelsAranMan:852726957091323934>')
 
-  if message.author.id == 257995877367414785:
+  if message.author.id == config.UBER_USER_ID:
       roll = random.randint(1, 100)
       logging.info(f"Ub3r rolled {roll}")
       if roll <= 7:
           text = message.content.lower()
           response = capi_sentence(text) # Using capi_sentence from helpers
           await message.reply(response, mention_author=False)
-  elif message.author.id == 249678251226562561:
+  elif message.author.id == config.HARRI_USER_ID:
       roll = random.randint(1,1000)
       print("Harri rolled", roll)
       if roll <= 8:
@@ -235,7 +227,7 @@ async def on_message(message):
 
                       response = model.generate_content([gemini_prompt])
                       # Split the response if it's too long for Discord
-                      response_chunks = split_response(response.text, discord_max_length)
+                      response_chunks = split_response(response.text, config.DISCORD_MAX_LENGTH)
                       for chunk in response_chunks:
                           await message.channel.send(chunk)
 
@@ -243,6 +235,44 @@ async def on_message(message):
                       logging.error(f"An error occurred during custom Gemini interaction: {e}")
                       await message.channel.send("Sorry, I couldn't generate a response for you at this time.")
  
+@client.event
+async def _delete_message_after_delay(message: discord.Message, delay: int, db):
+    """
+    Waits for a specified delay, deletes the message, and cleans up corresponding
+    database entries for gem claims.
+    """
+    await asyncio.sleep(delay)
+    message_id = message.id
+    try:
+        await message.delete()
+        logging.info(f"Deleted gem spawn message {message_id} after claim window closed.")
+    except discord.NotFound:
+        # If message is already gone, we should still try to clean up the DB
+        logging.warning(f"Attempted to delete gem message {message_id}, but it was already deleted.")
+    except discord.Forbidden:
+        logging.error(f"Lacking permissions to delete gem message {message_id}. Cannot clean up DB entries.")
+        return # Can't do anything further
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while deleting message {message_id}: {e}")
+
+    # Clean up the database entries for this message_id using a batch delete
+    if db:
+        try:
+            claims_ref = db.collection('gem_claims')
+            docs_to_delete = claims_ref.where(filter=FieldFilter('message_id', '==', message_id)).stream()
+
+            batch = db.batch()
+            deleted_count = 0
+            for doc in docs_to_delete:
+                batch.delete(doc.reference)
+                deleted_count += 1
+            
+            if deleted_count > 0:
+                batch.commit()
+                logging.info(f"Cleaned up {deleted_count} claim(s) from database for message ID {message_id}.")
+        except Exception as e:
+            logging.error(f"An error occurred while cleaning up gem claims for message ID {message_id}: {e}")
+
 @client.event
 async def on_reaction_add(reaction, user):
     """
@@ -274,41 +304,30 @@ async def on_reaction_add(reaction, user):
         if not claimed_by_user:
             current_time = datetime.now(timezone.utc)
 
-            # Get the timestamp of the first claim, if any.
+            # Get the timestamp of the first claim.
             first_claim_time = first_claim_timestamp.get(message_id)
 
-            if first_claim_time is None:  # This means it's the first claim.
-                # Record the timestamp for this first claim.
-                first_claim_timestamp[message_id] = current_time
-                logging.info(f"First claim on gem message {message_id} at {current_time}")
-                is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content  # Determine if it's a sparkly gem.
-
+            # Helper function to process the claim, avoiding code duplication.
+            async def process_gem_claim(user, is_sparkly):
                 # Determine base gem count
-                if is_sparkly_claim:
-                    base_gem_count = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
+                if is_sparkly:
+                    base_gem_count = random.randint(6, 10)
                     logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
                 else:
                     base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
                     logging.info(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
 
-
-                # Check user's inventory for gem acquisition booster
+                # Check for booster using the helper function
                 user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
                 user_doc = user_doc_ref.get()
-                acquisition_multiplier = 1.0 # Default multiplier
-                if user_doc.exists:
-                    inventory = user_doc.to_dict().get('inventory', {})
-                    gem_booster_item = inventory.get("gem_booster")
-                    if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
-                         booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
-                         acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0) # Default multiplier
-                         logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
+                inventory = user_doc.to_dict().get('inventory', {}) if user_doc.exists else {}
+                acquisition_multiplier = get_acquisition_multiplier(inventory, shop_items)
+                if acquisition_multiplier > 1.0:
+                    logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
 
-
-                # Calculate final gem count after applying multiplier using ceiling formula
+                # Calculate final gem count
                 gemcount = math.ceil(base_gem_count * acquisition_multiplier)
                 logging.info(f"Final gem count after multiplier: {gemcount}")
-
 
                 try:
                     # Record the claim in Firebase
@@ -316,82 +335,40 @@ async def on_reaction_add(reaction, user):
                         'message_id': message_id,
                         'user_id': user.id,
                         'username': user.display_name,
-                        'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
+                        'timestamp': firestore.SERVER_TIMESTAMP
                     })
 
                     # Update user's gem count and ensure inventory is not overwritten
-                    user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
-                    # Only set inventory if it doesn't exist
-                    user_doc = user_gem_counts_ref.get()
                     update_data = {
                         'username': user.display_name,
                         'gem_count': firestore.Increment(gemcount)
                     }
                     if not user_doc.exists or 'inventory' not in user_doc.to_dict():
                         update_data['inventory'] = {}  # Initialize inventory only if missing
-                    user_gem_counts_ref.set(update_data, merge=True)
+                    user_doc_ref.set(update_data, merge=True)
 
                     await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
                     logging.info(f"ID:{user.id} claimed the gem")
                 except Exception as e:
-                    logging.error(f"Error recording gem claim in Firebase: {e}")
+                    logging.error(f"Error recording gem claim in Firebase for {user.display_name}: {e}")
                     await channel.send("A server error occurred while trying to claim the gem.")
 
-            elif (current_time - first_claim_time).total_seconds() <= 30: # Not the first claim, check if within 30 seconds.
-                    # Determine if it was a sparkly gem based on the message content
-                is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
+            # Determine if it was a sparkly gem based on the message content
+            is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
 
-                # Determine base gem count
-                if is_sparkly_claim:
-                    base_gem_count = random.randint(6, 10) # Example: sparkly gems give 6-10 gems
-                    logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
-                else:
-                    base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
-                    logging.info(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
+            if first_claim_time is None:  # This is the first claim.
+                first_claim_timestamp[message_id] = current_time
+                logging.info(f"First claim on gem message {message_id} at {current_time}")
+                await process_gem_claim(user, is_sparkly_claim)
+                # Schedule the message for deletion after the 30-second window
+                client.loop.create_task(_delete_message_after_delay(reaction.message, 30, db))
 
+            elif (current_time - first_claim_time).total_seconds() <= 30: # Not the first claim, but within the 30-second window.
+                await process_gem_claim(user, is_sparkly_claim)
 
-                # Check user's inventory for gem acquisition booster
-                user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
-                user_doc = user_doc_ref.get()
-                acquisition_multiplier = 1.0 # Default multiplier
-                if user_doc.exists:
-                    inventory = user_doc.to_dict().get('inventory', {})
-                    gem_booster_item = inventory.get("gem_booster")
-                    if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
-                            booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
-                            acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.0) # Default multiplier
-                            logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
-
-                # Calculate final gem count after applying multiplier using ceiling formula
-                gemcount = math.ceil(base_gem_count * acquisition_multiplier) 
-                print(f"Final gem count after multiplier: {gemcount}")
-
-                try:
-                    # Record the claim in Firebase
-                    gem_claims_ref.add({
-                        'message_id': message_id,
-                        'user_id': user.id,
-                        'username': user.display_name,
-                        'timestamp': firestore.SERVER_TIMESTAMP  # Use server timestamp
-                    })
-
-                    # Update user's gem count and ensure inventory is present
-                    user_gem_counts_ref = db.collection('user_gem_counts').document(str(user.id))
-                    user_gem_counts_ref.set({
-                        'username': user.display_name,
-                        'gem_count': firestore.Increment(gemcount)
-                        # Inventory is not explicitly added here as it should be initialized on the first claim
-                        # and merge=True will preserve existing inventory data
-                    }, merge=True) # Use merge=True to avoid overwriting other fields if they exist
-
-                    await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
-                    logging.info(f"ID:{user.id} claimed the gem")
-                except Exception as e:
-                    logging.error(f"Error recording gem claim in Firebase: {e}")
-                    await channel.send("A server error occurred while trying to claim the gem.")
-                else:
-                    logging.info(f"Reaction on gem message {message_id} by {user.display_name} was outside the 30-second window based on the first claim.")
+            else:
+                logging.info(f"Reaction on gem message {message_id} by {user.display_name} was outside the 30-second window.")
 
         else:
             logging.info(f"User {user.display_name} has already claimed gem {message_id}.")
-client.run(my_secret)
+client.run(config.DISCORD_TOKEN)

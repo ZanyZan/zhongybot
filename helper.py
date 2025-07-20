@@ -163,3 +163,16 @@ def convert(seconds):
     seconds %= 60
 
     return "%d:%02d:%02d" % (hour, minutes, seconds)
+
+def get_acquisition_multiplier(inventory, shop_items):
+    """Checks a user's inventory for a gem booster and returns the multiplier."""
+    acquisition_multiplier = 1.0  # Default multiplier
+    if not inventory:
+        return acquisition_multiplier
+
+    gem_booster_item = inventory.get("gem_booster")
+    if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
+        booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
+        acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.3)
+    
+    return acquisition_multiplier

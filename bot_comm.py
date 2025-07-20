@@ -1,4 +1,5 @@
 import discord
+import config
 import sys
 from discord.ext import tasks
 from datetime import datetime, timedelta, timezone
@@ -6,7 +7,8 @@ import random
 import weapons as wp
 from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
+from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, get_acquisition_multiplier
+import math
 import logging
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -14,9 +16,7 @@ logging.basicConfig(level=logging.INFO,
                         logging.FileHandler("zhongybot.log"),
                         logging.StreamHandler(sys.stdout)
                     ])
-# Consider moving this to a config file or environment variable
-# and using it in main.py as well.
-aui = [90936340002119680, 264507975568195587]
+
 # Define functions for each command
 async def handle_ursus(message, my_time):
     current_dt = datetime.fromtimestamp(my_time)
@@ -200,17 +200,32 @@ async def handle_8ball(message):
     await message.channel.send(embed=embed)
 
 async def handle_weaponf(message):
-	
-    weapon_class, weapon_tier = message.content.split()[1:]
-    weapon_tier = weapon_tier.title()
-    if weapon_class in wp.weapon_stats:
-        attack = wp.weapon_stats[weapon_class][weapon_tier]
-    elif weapon_class in wp.weapon_alias:
-        attack = wp.weapon_alias[weapon_class][weapon_tier]
+    """
+    Handles the ~weaponf command to calculate weapon flame stats.
+    Uses the refactored WEAPON_LOOKUP from weapons.py for a unified,
+    case-insensitive search.
+    """
+    args = message.content.split()
+    if len(args) < 3:
+        await message.channel.send("Invalid format. Please use `~weaponf <class/weapon> <weapontype>` (e.g., `~weaponf hero abso`).")
+        return
 
-    response = wp.weapon_calc(attack, weapon_tier)
+    weapon_class_or_alias = args[1]
+    weapon_tier = args[2]
 
-    title = f'{weapon_tier} flame tiers for {weapon_class}'
+    # Normalize inputs for lookup
+    lookup_key = weapon_class_or_alias.lower()
+    tier_key = weapon_tier.title()  # e.g., 'abso' -> 'Abso'
+
+    # Use the new unified lookup dictionary from weapons.py
+    weapon_stats_for_class = wp.WEAPON_LOOKUP.get(lookup_key)
+
+    if not weapon_stats_for_class or not (base_attack := weapon_stats_for_class.get(tier_key)):
+        await message.channel.send(f"Could not find data for '{weapon_class_or_alias}' with tier '{weapon_tier}'. Please check the names and try again.")
+        return
+
+    response = wp.weapon_calc(base_attack, tier_key)
+    title = f'{tier_key} flame tiers for {weapon_class_or_alias.title()}'
     embed = discord.Embed(title=title,
                           description=response,
                           colour=discord.Colour.purple())
@@ -218,7 +233,7 @@ async def handle_weaponf(message):
 
 
 async def handle_ask(message, db, model, max_history_length, discord_max_length):
-    if message.channel.id == 971245167254331422:
+    if message.channel.id == config.BOT_SPAM_CHANNEL_ID:
         if db is None:
             await message.channel.send("Firebase is not initialized. Cannot use the ~ask command.")
             return
@@ -260,7 +275,7 @@ async def handle_ask(message, db, model, max_history_length, discord_max_length)
 
 
 async def handle_deletehistory(message, db):
-    if message.channel.id == 971245167254331422:
+    if message.channel.id == config.BOT_SPAM_CHANNEL_ID:
         if db is None:
             await message.channel.send("Firebase is not initialized. Cannot delete history.")
             return
@@ -282,7 +297,7 @@ async def handle_deletehistory(message, db):
 
 async def handle_forward(message, client):
         # Replace with the actual server channel ID you want to forward to
-        target_channel_id = 808341519714484246  # <-- **IMPORTANT: Change this to your desired channel ID**
+        target_channel_id = config.FORWARD_CHANNEL_ID
 
         # Get the target channel object
         target_channel = client.get_channel(target_channel_id)
@@ -303,7 +318,7 @@ async def handle_forward(message, client):
 
 
 async def handle_givegems(message, db):	
-    if message.author.id not in aui:
+    if message.author.id not in config.ADMIN_USER_IDS:
         await message.channel.send("You are not authorized to use this command.")
         return
 
@@ -347,7 +362,7 @@ async def handle_givegems(message, db):
 
 async def handle_takegems(message, db):
     # Check if the message author is authorized
-    if message.author.id not in aui:
+    if message.author.id not in config.ADMIN_USER_IDS:
         await message.channel.send("You are not authorized to use this command.")
         return
 
@@ -459,7 +474,7 @@ weights = [0.3, 0.25, 0.2, 0.15, 0.07, 0.03] # Relative weights for each symbol
 slot_cost = 2
 num_reels = 3
 async def handle_slots(message, db):
-    if message.channel.id == 971245167254331422: # Replace with your desired channel ID
+    if message.channel.id == config.BOT_SPAM_CHANNEL_ID: # Replace with your desired channel ID
         if db is None:  # Consider using an assertion here if db should always be initialized
             await message.channel.send("Firebase is not initialized. Cannot use the slots command.")
             return
@@ -619,7 +634,7 @@ async def handle_slotspayouts(message):
 
     
 async def handle_wipegems(message, db, target_role_id):
-    if message.author.id not in aui: # Assuming 'aui' is the admin user ID
+    if message.author.id not in config.ADMIN_USER_IDS: # Assuming 'aui' is the admin user ID
         await message.channel.send("You are not authorized to use this command.")
         return
 
@@ -667,8 +682,8 @@ async def handle_wipegems(message, db, target_role_id):
         
 async def handle_shop(message):
     """Displays the items available in the shop."""
-    if message.channel.id != 971245167254331422:
-        await message.channel.send("That command is restricted to debris-botspam.")
+    if message.channel.id != config.BOT_SPAM_CHANNEL_ID:
+        await message.channel.send(f"That command is restricted to <#{config.BOT_SPAM_CHANNEL_ID}>.")
         return
 
     shop_message = "Welcome to the Gem Shop!\n\nAvailable Items:\n"
@@ -793,13 +808,14 @@ async def handle_daily(message, db):
     user_id = str(message.author.id)
     user_ref = db.collection('user_gem_counts').document(user_id)
 
-    # Define daily reward
-    daily_reward = 10 # Or make it random random.randint(5, 15)
+    # Define base daily reward
+    base_daily_reward = 10 # Or make it random random.randint(5, 15)
     gem_emoji_unicode = '\U0001F48E'
 
     try:
         doc = user_ref.get()
         current_time_utc = datetime.now(timezone.utc)
+        user_data = {} # Initialize user_data
 
         if doc.exists:
             user_data = doc.to_dict()
@@ -818,14 +834,29 @@ async def handle_daily(message, db):
                     await message.channel.send(f"You've already claimed your daily gems today. Please wait another {int(hours)} hours and {int(minutes)} minutes for the reset.")
                     return
 
+        # Check for gem acquisition booster using the helper function
+        inventory = user_data.get('inventory', {})
+        acquisition_multiplier = get_acquisition_multiplier(inventory, shop_items)
+        if acquisition_multiplier > 1.0:
+            logging.info(f"User {message.author.display_name} has gem booster for daily. Applying multiplier: {acquisition_multiplier}")
+
+        # Calculate final gem count after applying multiplier
+        final_daily_reward = math.ceil(base_daily_reward * acquisition_multiplier)
+
         user_ref.set({
             'username': message.author.display_name,
-            'gem_count': firestore.Increment(daily_reward),
+            'gem_count': firestore.Increment(final_daily_reward),
             'last_daily_claim': current_time_utc
         }, merge=True)
 
-        await message.channel.send(f"You have claimed your daily {daily_reward} gems! {gem_emoji_unicode}")
-        logging.info(f"User {message.author.display_name} ({user_id}) claimed their daily {daily_reward} gems.")
+        # Construct response message
+        response_message = f"You have claimed your daily {base_daily_reward} gems! {gem_emoji_unicode}"
+        if acquisition_multiplier > 1.0:
+            bonus_gems = final_daily_reward - base_daily_reward
+            response_message += f"\nThanks to your Gem Acquisition Booster, you received a bonus of {bonus_gems} gem(s), for a total of {final_daily_reward}!"
+
+        await message.channel.send(response_message)
+        logging.info(f"User {message.author.display_name} ({user_id}) claimed their daily {final_daily_reward} gems.")
     except Exception as e:
         logging.error(f"Error processing daily claim for user {user_id}: {e}")
         await message.channel.send("An error occurred while processing your daily claim.")
