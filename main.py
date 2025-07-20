@@ -144,95 +144,111 @@ async def start_gem_spawning():
     spawn_gem.start()
     logging.info("Gem spawn loop started.")
 
+async def handle_command(message):
+    """
+    Processes a message that is identified as a command.
+    Handles messages starting with '~' in servers and all messages in DMs.
+    """
+    # Handle DMs, which are always treated as potential commands
+    if isinstance(message.channel, discord.DMChannel):
+        if message.content.lower().startswith('~forward'):
+            handler = command_handlers.get('forward')
+            if handler:
+                await handler(message, client=client)
+        else:
+            await message.channel.send("To forward a message to the server, please start your message with `~forward` followed by the message you want to send.")
+        return
+
+    # Handle server commands
+    command = message.content[1:].lower().split()[0]
+    handler = command_handlers.get(command)
+
+    if handler:
+        # This structure simplifies passing arguments to handlers
+        kwargs = {}
+        if command in ['ask']:
+            kwargs = {'db': db, 'model': model, 'max_history_length': config.MAX_HISTORY_LENGTH, 'discord_max_length': config.DISCORD_MAX_LENGTH}
+        elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'inventory', 'daily', 'leaderboard']:
+            kwargs = {'db': db}
+        elif command in ['ursus', 'servertime', 'time']:
+            kwargs = {'my_time': my_time}
+        elif command in ['wipegems']:
+            kwargs = {'db': db, 'target_role_id': config.MEMBER_ROLE_ID}
+        
+        await handler(message, **kwargs)
+
+    # Special case for admin-only commands not in the main handler dict
+    elif command == 'spawngem':
+        if message.author.id in config.ADMIN_USER_IDS:
+            await manual_gem_spawn()
+        else:
+            await message.channel.send("You are not authorized to use this command.")
+
+async def handle_passive_responses(message):
+    """
+    Handles non-command-based responses, like memes or user-specific triggers.
+    """
+    # Dex free meme
+    # This robust pattern checks for keywords like "dex" in proximity to words
+    # implying low cost, and includes common "leetspeak" number substitutions.
+    # This catches a wide variety of creative and verbose phrasings.
+    dex_keywords = r"\b(d[e3]x|d[e3]xt[e3]r[i1]ty)\b"
+    cost_keywords = r"\b(fr[e3][e3]|{emoji}|ch[e3][a4]p([e3]r)?|l[o0]w([e3]r)?\s*c[o0]st|c[o0]sts?\s*l[e3]ss|l[e3]ss\s*[e3]xp[e3]ns[i1]v[e3]|n[o0]\s*c[o0]st|[e3][a4]s(y|[i1][e3]r))\b".format(emoji=re.escape(config.EMOJI_FREE))
+    dex_free_pattern = r"({dex}{filler}{cost}|{cost}{filler}{dex})".format(dex=dex_keywords, cost=cost_keywords, filler=r"[\s\w,'.?!]{1,40}")
+    if re.search(dex_free_pattern, message.content.lower()):
+        response = 'No it isn\'t'
+        await message.reply(response)
+        return
+
+    # User-specific triggers
+    if message.author.id == config.UBER_USER_ID:
+        roll = random.randint(1, 100)
+        logging.info(f"Ub3r rolled {roll}")
+        if roll <= 7:
+            text = message.content.lower()
+            response = capi_sentence(text)
+            await message.reply(response, mention_author=False)
+            return
+    elif message.author.id == config.HARRI_USER_ID:
+        roll = random.randint(1, 1000)
+        logging.info(f"Harri rolled {roll}")
+        if roll <= 8:
+            roll = random.randint(1, 4)
+            if roll <= 3:
+                text = message.content.lower()
+                response = capi_sentence(text)
+                await message.reply(response, mention_author=False)
+            else:  # 25% chance for the custom message using Gemini
+                if model:
+                    try:
+                        gemini_prompt = "In a way that shuts him up remind the user named Harri that he has a 70 boss damage familiar card, which is extremely rare. You are the one addressing him directly and make it short"
+                        response = model.generate_content([gemini_prompt])
+                        response_chunks = split_response(response.text, config.DISCORD_MAX_LENGTH)
+                        for chunk in response_chunks:
+                            await message.channel.send(chunk)
+                    except Exception as e:
+                        logging.error(f"An error occurred during custom Gemini interaction: {e}")
+                        await message.channel.send("Sorry, I couldn't generate a response for you at this time.")
+            return
 
 @client.event
 async def on_message(message):
-  """
-  Event triggered when a message is received. Processes the message to handle various commands.
+    """
+    Event triggered when a message is received. Processes the message to handle various commands.
 
-  Args:
-      message (discord.Message): The message object received from the channel.
-  """
-  #if message is from bot, ignore
-  if (message.author == client.user):
-    return
-  elif re.search(r'dex.*?(?:is )?(free|{})'.format(re.escape(config.EMOJI_FREE)), message.content.lower(), re.DOTALL):
-    response = 'No it isn\'t'
-    new = await message.reply(response)
+    Args:
+        message (discord.Message): The message object received from the channel.
+    """
+    # Ignore messages from the bot itself
+    if message.author == client.user:
+        return
 
-  # Check if the message is a private message
-  if isinstance(message.channel, discord.DMChannel):
-      # Process the command if it starts with '~forward'
-      if message.content.lower().startswith('~forward'):
-          # Extract the command
-          command = message.content[1:].lower().split()[0]
-          handler = command_handlers.get(command)
-
-          if handler:
-              await handler(message, client=client)
-      else:
-          # Optionally, send a message back to the user if the private message doesn't use the forward command
-          await message.channel.send("To forward a message to the server, please start your message with `~forward` followed by the message you want to send.")
-  elif message.content.startswith('~'):
-      command = message.content[1:].lower().split()[0]
-      handler = command_handlers.get(command)
-      if handler:
-          # Pass necessary arguments based on the command
-          if command in ['ask']:
-              await handler(message, db=db, model=model, max_history_length=config.MAX_HISTORY_LENGTH, discord_max_length=config.DISCORD_MAX_LENGTH)
-          elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'inventory', 'daily', 'leaderboard']:
-              await handler(message, db=db)
-          elif command in ['ursus', 'servertime', 'time']:
-              await handler(message, my_time=my_time) # Pass my_time here
-          elif command in ['wipegems']:
-              await handler(message, db, config.MEMBER_ROLE_ID) #Member role id for debris
-          else: # For commands that don't need extra arguments
-              await handler(message)
-      elif command == 'spawngem':
-            if message.author.id not in config.ADMIN_USER_IDS:
-                await message.channel.send("You are not authorized to use this command.")
-                return
-            else:
-                await manual_gem_spawn()
-
-
-  if message.content.lower() == 'aran succ' and (875235978971861002 in list(
-    role.id for role in message.author.roles)):
-    response = f"Hey {message.author.display_name}, heard you play Aran. You have my condolences. You should gather everyone and go Hunter's Prey Changseop for this travesty"
-    new = await message.reply(response)
-    await new.add_reaction('<:FeelsAranMan:852726957091323934>')
-
-  if message.author.id == config.UBER_USER_ID:
-      roll = random.randint(1, 100)
-      logging.info(f"Ub3r rolled {roll}")
-      if roll <= 7:
-          text = message.content.lower()
-          response = capi_sentence(text) # Using capi_sentence from helpers
-          await message.reply(response, mention_author=False)
-  elif message.author.id == config.HARRI_USER_ID:
-      roll = random.randint(1,1000)
-      print("Harri rolled", roll)
-      if roll <= 8:
-          roll = random.randint(1,4)
-          if roll <= 3:
-              text = message.content.lower()
-              response = capi_sentence(text) # Using capi_sentence from helpers
-              await message.reply(response, mention_author=False)
-          else: # 25% chance for the custom message using Gemini
-              if model:  # Ensure the Gemini model is initialized
-                  try:
-                      # Define your custom Gemini prompt here
-                      gemini_prompt = "In a way that shuts him up remind the user named Harri that he has a 70 boss damage familiar card, which is extremely rare. You are the one addressing him directly and make it short"
-
-                      response = model.generate_content([gemini_prompt])
-                      # Split the response if it's too long for Discord
-                      response_chunks = split_response(response.text, config.DISCORD_MAX_LENGTH)
-                      for chunk in response_chunks:
-                          await message.channel.send(chunk)
-
-                  except Exception as e:
-                      logging.error(f"An error occurred during custom Gemini interaction: {e}")
-                      await message.channel.send("Sorry, I couldn't generate a response for you at this time.")
+    # Check if the message is a command and route it to the command handler
+    if message.content.startswith('~') or isinstance(message.channel, discord.DMChannel):
+        await handle_command(message)
+    # Otherwise, check for passive responses
+    else:
+        await handle_passive_responses(message)
  
 @client.event
 async def _delete_message_after_delay(message: discord.Message, delay: int, db):

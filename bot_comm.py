@@ -132,9 +132,44 @@ async def handle_esfera(message):
     await message.channel.send(embed=embed)
 
 async def handle_help(message):
-    response = 'Command List.\n- Use `~ursus` : to look for ursus time!.\n- Use `~servertime` : to check server\'s time (or check the clock channel!).\n- Use `~time` : if by some divine intervention you don\'t remember your own time LOL\n- You can also use `~time (+/-)(#Number)` : to check your local time in relation to server\'s reset time. eg: `~time +3` `~time -3`.\n- Use `~esfera` : if you are lazy and don\'t want to check the guides for the esfera PQ picture.\n- Use `~8ball` : to ask any yes/no questions.\n- Use `~roll` : to roll a d20 die.\n- Use `~roll d#`: to roll a d# die. eg: `~roll d40`, rolls a d40 die, etc.\n- Use `~weaponf class/weapon weapontype`: will give you the attack flame for your specified class/weapon (weapontype being Abso/Arcane/Genesis) **Except for Zero. Was lazy to implement Zero. \n- Use `~ask` to ask the bot something and get an answer. \n- Use `~deletehistory` to delete your conversation history with the bot. \n- Use `~checkgems` to see how many gems you have. \n- Use `~daily` to claim your daily gems.\n- Use `~leaderboard` to see the top gem holders.\n- Use `~givegems @user <amount>` (Admin only) to give gems to a user. \n- Use `~takegems @user <amount>` (Admin only) to take gems from a user. \n- Use `~spawngem` (Admin only) to manually spawn a gem.\n- Use `~slots`: to play the slot machine!.\n- Use `~slotspayouts`: to view the slot machine payouts.\n\nCommands are not case sensitive, you can do `~UrSuS` if you want.\n \nAny issues or if you have any ideas for new commands please, let Zany know!'
+    help_text = """
+    Here is a list of available commands. Commands are not case-sensitive.
+    
+    **General Commands**
+    `~help` - Shows this help message.
+    `~ursus` - Shows the daily Ursus 2x meso times.
+    `~servertime` - Displays the current server time (UTC).
+    `~time` - Shows your local time.
+    `~time +/-<hours>` - Calculates time relative to server reset (e.g., `~time +3`).
+    `~weaponf <class> <tier>` - Calculates weapon flame stats (e.g., `~weaponf hero abso`).
+    `~esfera` - Displays the Esfera PQ guide image.
+
+    **Gem & Economy Commands**
+    `~daily` - Claim your daily gems.
+    `~checkgems` - Check your current gem balance.
+    `~leaderboard` - Shows the top gem holders.
+    `~shop` - Displays the gem shop.
+    `~buy <item_id>` - Buys an item from the shop.
+    `~inventory` - Shows your purchased items.
+    `~slots [rolls]` - Play the slot machine (e.g., `~slots 5`).
+    `~slotspayouts` - Shows the slot machine payouts and odds.
+
+    **Fun & AI Commands**
+    `~roll [d#]` - Rolls a die (d20 default, e.g., `~roll d100`).
+    `~8ball <question>` - Asks the magic 8-ball a question.
+    `~ask <prompt>` - Asks the bot's AI a question (in #debris-botspam).
+    `~deletehistory` - Deletes your conversation history with the AI.
+
+    **Admin Commands**
+    `~givegems @user <amount>`
+    `~takegems @user <amount>`
+    `~spawngem`
+    `~wipegems`
+
+    Any issues or ideas for new commands? Please let Zany know!
+    """
     embed = discord.Embed(title="Zhongy Helps",
-                          description=response,
+                          description=help_text,
                           colour=discord.Colour.purple())
     await message.channel.send(embed=embed)
 
@@ -890,16 +925,44 @@ shop_items = {
     "curse_ward": {
         "name": "Curse Ward",
         "description": "Supposedly improves your odds and makes you immune to misfortune.",
-        "cost": 750, # Example cost
-        "type": "passive", # Indicate it's a passive item (for narrative effect)
-        "effect": {} # No direct effect on bot mechanics, purely for flavor/narrative
+        "cost": 750,
+        "type": "passive",
+        "effect": {}
     },
     "luck_charm": {
         "name": "Luck Charm",
-        "description": "Supposedly boosts your item drop rate in other games.",
-        "cost": 1000, # Example cost
-        "type": "passive", # Indicate it's a passive item (for narrative effect)
-        "effect": {} # No direct effect on bot mechanics, purely for flavor/narrative
+        "description": "Supposedly boosts your item drop rate in other games. (Such as MapleStory)",
+        "cost": 1000,
+        "type": "passive",
+        "effect": {}
+    },
+    "golden_maple_leaf": {
+        "name": "Golden Maple Leaf",
+        "description": "A perfectly preserved, gilded maple leaf. A true collector's item for the distinguished Mapler.",
+        "cost": 5000,
+        "type": "passive",
+        "effect": {}
+    },
+    "pitched_fragment": {
+        "name": "Pitched Boss Fragment",
+        "description": "A fragment of a mythical boss item. It hums with untold power... or maybe it's just a shiny rock. A true status symbol.",
+        "cost": 10000,
+        "type": "passive",
+        "effect": {}
+    },
+    "zhongys_blessing": {
+        "name": "Zhongy's Blessing",
+        "description": "A small, carved charm that looks suspiciously like the bot. It offers no real benefits, but it feels nice to have.",
+        "cost": 2500,
+        "type": "passive",
+        "effect": {}
+    },
+    "zyn_ban_hammer": {
+        "name": "The Zyn Ban Hammer",
+        "description": "For the low, low price of 99999 gems, you can ban Zyn. Or can you?",
+        "cost": 99999,
+        "type": "passive",
+        "effect": {}
     }
 }
 command_handlers = {
@@ -920,7 +983,7 @@ command_handlers = {
     'givegems': handle_givegems,
     'takegems': handle_takegems,
     'slots': handle_slots,
-    'payout': handle_slotspayouts,
+    'slotspayouts': handle_slotspayouts,
     'wipegems': handle_wipegems,
     'shop': handle_shop,
     'buy': handle_buy,

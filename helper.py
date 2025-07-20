@@ -14,8 +14,7 @@ def format_timestamp(timestamp, timezone, format):
       timestamp (int): Epoch time in seconds.
       timezone (str): Timezone name from pytz.
       format (str): Desired datetime format.
-      
-  Returns:
+    Returns:
       str: Formatted date-time string.
   """
   time = datetime.fromtimestamp(timestamp, tz=timezone).strftime(format)
@@ -28,10 +27,10 @@ ops = {'+': operator.add, '-': operator.sub}
 #helper function to calculate new times for time command
 #using operator module, it does the operation given the string for the operator it receives
 def calculate_time(time1, operator, time2):
-  new_time = ops[operator](time1, time2)
-  return new_time
+    new_time = ops[operator](time1, time2)
+    return new_time
 
-def get_start_of_week(date):
+def get_start_of_week(date: datetime) -> datetime:
   """
   Calculates a new time based on the operator provided.
   
@@ -42,15 +41,15 @@ def get_start_of_week(date):
       
   Returns:
       int: Resulting time in epoch seconds.
-  """
+    """
   # Calculate the start of the week (Monday)
   start_of_week = date - timedelta(days=date.weekday())
   return start_of_week
 
 
-def get_end_of_week(start_of_week):
+def get_end_of_week(start_of_week: datetime) -> datetime:
   """
-    Calculates the start of the week (Monday) for a given date.
+    Calculates the end of the week (Sunday) for a given start date (Monday).
     
     Args:
         date (datetime): Input date.
@@ -61,11 +60,14 @@ def get_end_of_week(start_of_week):
   # Calculate the end of the week (Sunday)
   end_of_week = start_of_week + timedelta(days=6)
   return end_of_week
+
 #Helper function to split a large response from LLM to accomodate discord lengths
 def split_response(response_text, max_length):
   """Splits a long text into chunks that fit within a max_length."""
   chunks = []
   current_chunk = ""
+  # Splitting by sentences is not robust, as periods can appear in other contexts.
+  # Consider a more sophisticated approach, perhaps using a dedicated sentence splitter or a character limit with a "..." cutoff.
   for sentence in response_text.split('. '): # Simple split by sentence
     if len(current_chunk) + len(sentence) + 2 <= max_length: # +2 for ". "
       current_chunk += sentence + ". "
@@ -76,58 +78,68 @@ def split_response(response_text, max_length):
     chunks.append(current_chunk.strip())
   return chunks
 
-def capi_sentence(sentence):
-    new_sentence = ""
-    number = 0 #Dummy number for tracking
+def capi_sentence(sentence: str) -> str:
+    """
+    Applies a capitalization pattern to a sentence where letters alternate between upper and lower case,
+    but with added randomness and tracking of consecutive cases to create a "wavy" capitalization effect.
 
-    for letter in sentence.lower():
-        if len(new_sentence)<2: #Creates the first two letter
-            random_number = random.randint(0,1) #This randomly decides if the letter should be upper or lowercase
-            if random_number==0:
-                new_sentence += letter.upper()
-            else:
-                new_sentence += letter
-        else:
-            if (new_sentence[number-2].isupper() and new_sentence[number-1].isupper() or new_sentence[number-2].islower() and new_sentence[number-1].islower())==True:
-                #Checks if the two letters before are both upper or lowercase
-                if new_sentence[number-1].isupper(): #Makes the next letter the opposite of the letter before
-                    new_sentence += letter.lower()
-                else:
-                    new_sentence += letter.upper()
-            else:
-                random_number = random.randint(0,1)
-                if random_number==0:
-                    new_sentence += letter.upper()
-                else:
-                    new_sentence += letter
-                
-        number += 1 #Add one more to the tracking
-     
-    return(new_sentence)
-    
-def are_dates_in_same_week(date1, date2):
-  """
-    Checks if two dates fall within the same week.
-    
     Args:
-        date1 (datetime): First date.
-        date2 (datetime): Second date.
-    
+        sentence (str): The input sentence.
+
     Returns:
-        bool: True if both dates are in the same week, False otherwise.
+        str: The sentence with alternating capitalization.
+    """
+    result = ""
+    last_upper = False  # Track last capitalization
+
+    for i, char in enumerate(sentence.lower()):
+        if i < 2:  # Handle the first two characters randomly
+            result += char.upper() if random.random() < 0.5 else char
+            last_upper = result[-1].isupper()
+        else:
+            # Check for consecutive cases
+            if (result[i-2].isupper() and result[i-1].isupper()) or \
+               (result[i-2].islower() and result[i-1].islower()):
+                # Invert capitalization if consecutive cases
+                if result[i-1].isupper():
+                    result += char.lower()
+                    last_upper = False
+                else:
+                    result += char.upper()
+                    last_upper = True
+            else:
+                # Otherwise, apply random capitalization
+                if random.random() < 0.5:
+                    result += char.upper()
+                    last_upper = True
+                else:
+                    result += char.lower()
+                    last_upper = False
+    return result
+
+def are_dates_in_same_week(date1: datetime, date2: datetime) -> bool:
   """
-  # Get the start and end of the week for both dates
+  Checks if two dates fall within the same week (Monday to Sunday).
+  
+  Args:
+      date1 (datetime): First date.
+      date2 (datetime): Second date.
+  
+  Returns:
+      bool: True if both dates are in the same week, False otherwise.  
+  """
+# Get the start and end of the week for both dates
   start_of_week_date1 = get_start_of_week(date1)
   end_of_week_date1 = get_end_of_week(start_of_week_date1)
 
   start_of_week_date2 = get_start_of_week(date2)
   end_of_week_date2 = get_end_of_week(start_of_week_date2)
 
-  # Check if the weeks overlap
+# Check if the weeks overlap
   return start_of_week_date1 <= end_of_week_date2 and start_of_week_date2 <= end_of_week_date1
 
 
-def format_month_day(date_str, year=None):
+def format_month_day(date_str: str, year: int = None) -> datetime:
   """
   Converts a month-day string into a datetime object.
   
@@ -137,10 +149,10 @@ def format_month_day(date_str, year=None):
   
   Returns:
       datetime: Formatted date object.
-  
-  Raises:
-      ValueError: If the date string is not in 'Mon-DD' format.
-  """
+    
+    Raises:
+        ValueError: If the date string is not in 'Mon-DD' format.
+    """
   # Set the default year to the current year if not provided
   if year is None:
     year = datetime.now().year
@@ -155,7 +167,16 @@ def format_month_day(date_str, year=None):
   formatted_date = datetime(year, month_day.month, month_day.day)
   return formatted_date
 
-def convert(seconds):
+def convert(seconds: int) -> str:
+    """
+    Converts a number of seconds into a human-readable string in HH:MM:SS format.
+    
+    Args:
+        seconds (int): The number of seconds to convert.
+    
+    Returns:
+        str: Formatted time string in HH:MM:SS.
+    """
     seconds = seconds % (24 * 3600)
     hour = seconds // 3600
     seconds %= 3600
@@ -165,7 +186,17 @@ def convert(seconds):
     return "%d:%02d:%02d" % (hour, minutes, seconds)
 
 def get_acquisition_multiplier(inventory, shop_items):
-    """Checks a user's inventory for a gem booster and returns the multiplier."""
+    """
+    Checks a user's inventory for a gem booster and returns the corresponding
+    acquisition multiplier.
+    
+    This could be improved by using a more generic approach that allows for
+    multiple boosters or different types of effects.
+    
+    Returns:
+        float: The acquisition multiplier (defaults to 1.0 if no booster is found).
+               Should consider raising an exception or logging an error if an invalid
+               multiplier is encountered"""
     acquisition_multiplier = 1.0  # Default multiplier
     if not inventory:
         return acquisition_multiplier
