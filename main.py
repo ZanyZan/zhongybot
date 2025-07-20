@@ -11,6 +11,14 @@ import math
 import sys
 from google.cloud.firestore_v1.base_query import FieldFilter
 
+# Configure logging at the very beginning
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler("zhongybot.log"),
+                        logging.StreamHandler(sys.stdout)
+                    ])
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -31,14 +39,6 @@ try:
 except Exception as e:
     logging.error(f"Error initializing Firebase: {e}")
     db = None # Set db to None if initialization fails
-
-# Configure logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.FileHandler("zhongybot.log"),
-                        logging.StreamHandler(sys.stdout)
-                    ])
 
 client = discord.Client(intents=intents)
 genai.configure(api_key=config.GEMINI_API_KEY)

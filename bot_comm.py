@@ -10,13 +10,6 @@ from google.cloud.firestore_v1.field_path import FieldPath
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, get_acquisition_multiplier
 import math
 import logging
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.FileHandler("zhongybot.log"),
-                        logging.StreamHandler(sys.stdout)
-                    ])
-
 # Define functions for each command
 async def handle_ursus(message, my_time):
     current_dt = datetime.fromtimestamp(my_time)
