@@ -1,23 +1,26 @@
-import config  # Import config at the top
-import discord
-from discord.ext import tasks
+import logging
+import sys
 import time
 from datetime import datetime, timezone
 import random
 import re
-import google.generativeai as genai
 import asyncio
 import math
-import sys
-from google.cloud.firestore_v1.base_query import FieldFilter
 
-# Configure logging at the very beginning
+# Configure logging at the very beginning, BEFORE any other modules that might use logging are imported.
+# This is the most critical part of the fix.
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
                     handlers=[
                         logging.FileHandler("zhongybot.log"),
                         logging.StreamHandler(sys.stdout)
                     ])
+
+import config  # Now that logging is configured, we can safely import our other modules.
+import discord
+from discord.ext import tasks
+import google.generativeai as genai
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -27,7 +30,7 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
 from bot_comm import command_handlers, shop_items
-import logging
+
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_acquisition_multiplier
 first_claim_timestamp = {}
 
