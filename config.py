@@ -51,4 +51,17 @@ MAX_HISTORY_LENGTH = _get_env_var("MAX_HISTORY_LENGTH", default=20, var_type=int
 MIN_GEM_SPAWN_INTERVAL = _get_env_var("MIN_GEM_SPAWN_INTERVAL", default=21600, var_type=int, required=False)
 MAX_GEM_SPAWN_INTERVAL = _get_env_var("MAX_GEM_SPAWN_INTERVAL", default=43200, var_type=int, required=False)
 
+# --- Emojis ---
+EMOJI_FREE = '\U0001F193'
+EMOJI_GEM = '\U0001F48E'
+EMOJI_SPARKLE = '\U00002728'
+
+# Slot Machine Emojis
+EMOJI_CHERRY = '\U0001F352'
+EMOJI_LEMON = '\U0001F34B'
+EMOJI_ORANGE = '\U0001F34A'
+EMOJI_GRAPES = '\U0001F347'
+EMOJI_DIAMOND = EMOJI_GEM  # Re-use gem emoji for diamond
+EMOJI_STAR = '\U00002B50'
+
 logging.info("Configuration loaded successfully.")

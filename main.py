@@ -11,10 +11,6 @@ import math
 import sys
 from google.cloud.firestore_v1.base_query import FieldFilter
 
-free_emoji_unicode = '\U0001F193'
-gem_emoji_unicode = '\U0001F48E'
-sparkle_emoji_unicode = '\U00002728'
-
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -71,14 +67,14 @@ async def spawn_gem():
         try:
             is_sparkly = random.randint(1,5)
             if is_sparkly <= 1:
-                message_content = f"Wow! {sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode} A shiny gem has appeared! Go claim it!"
+                message_content = f"Wow! {config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE} A shiny gem has appeared! Go claim it!"
                 logging.info("Sparkly gem spawned!")
             else:
-                message_content = f"A wild {gem_emoji_unicode} has appeared! Go claim it!"
+                message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
                 print("Regular gem spawned.")
             # Add the gem emoji as a reaction to the message
             message = await channel.send(message_content)
-            await message.add_reaction(gem_emoji_unicode)
+            await message.add_reaction(config.EMOJI_GEM)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
             first_claim_timestamp.clear()  # Clear old entries before adding a new one
@@ -102,14 +98,14 @@ async def manual_gem_spawn():
         try:
             is_sparkly = random.randint(1,5)
             if is_sparkly <= 1:
-                message_content = f"Wow! {sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode} A shiny gem has appeared! Go claim it!"
+                message_content = f"Wow! {config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE} A shiny gem has appeared! Go claim it!"
                 logging.info("Sparkly gem spawned!")
             else:
-                message_content = f"A wild {gem_emoji_unicode} has appeared! Go claim it!"
+                message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
                 print("Regular gem spawned.")
             # Add the gem emoji as a reaction to the message
             message = await channel.send(message_content)
-            await message.add_reaction(gem_emoji_unicode)
+            await message.add_reaction(config.EMOJI_GEM)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
             first_claim_timestamp.clear()  # Clear old entries before adding a new one
@@ -157,7 +153,7 @@ async def on_message(message):
   #if message is from bot, ignore
   if (message.author == client.user):
     return
-  elif re.search(r'dex.*?(?:is )?(free|{})'.format(re.escape(free_emoji_unicode)), message.content.lower(), re.DOTALL):
+  elif re.search(r'dex.*?(?:is )?(free|{})'.format(re.escape(config.EMOJI_FREE)), message.content.lower(), re.DOTALL):
     response = 'No it isn\'t'
     new = await message.reply(response)
 
@@ -287,7 +283,7 @@ async def on_reaction_add(reaction, user):
         return
 
     # Check if the reaction is the gem emoji and on the current spawned gem message
-    if str(reaction.emoji) == gem_emoji_unicode and reaction.message.author == client.user and reaction.message.id == spawned_gem_message_id:
+    if str(reaction.emoji) == config.EMOJI_GEM and reaction.message.author == client.user and reaction.message.id == spawned_gem_message_id:
         message_id = reaction.message.id
         channel = reaction.message.channel
 
@@ -354,7 +350,7 @@ async def on_reaction_add(reaction, user):
                     await channel.send("A server error occurred while trying to claim the gem.")
 
             # Determine if it was a sparkly gem based on the message content
-            is_sparkly_claim = f"{sparkle_emoji_unicode}{gem_emoji_unicode}{sparkle_emoji_unicode}" in reaction.message.content
+            is_sparkly_claim = f"{config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE}" in reaction.message.content
 
             if first_claim_time is None:  # This is the first claim.
                 first_claim_timestamp[message_id] = current_time

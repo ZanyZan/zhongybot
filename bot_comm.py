@@ -433,43 +433,33 @@ async def handle_takegems(message, db):
         logging.exception(f"Error taking gems:")  # Use logging.exception
         await message.channel.send("An error occurred while trying to take gems.")
 
-
-# Define UTF-8 symbols as variables for slot machine
-cherry = '\U0001F352'
-lemon = '\U0001F34B'
-orange = '\U0001F34A'
-grapes = '\U0001F347'
-diamond = '\U0001F48E'
-star = '\U00002B50'
-
-
 # Define payout structure
 payouts = {
-    (diamond, diamond, diamond): 100, # Triple Diamond
-    (star, star, star): 75, # Triple Star
-	(grapes, grapes, grapes): 50, # Triple Grapes
-    (orange, orange, orange): 40, # Triple Orange
-	(lemon, lemon, lemon): 30, # Triple Lemon
-    (cherry, cherry, cherry): 15, # Triple Cherry
-    (diamond, diamond, None): 40, # Two diamonds
-    (star, star, None): 30, # Two stars
+    (config.EMOJI_DIAMOND, config.EMOJI_DIAMOND, config.EMOJI_DIAMOND): 100, # Triple Diamond
+    (config.EMOJI_STAR, config.EMOJI_STAR, config.EMOJI_STAR): 75, # Triple Star
+	(config.EMOJI_GRAPES, config.EMOJI_GRAPES, config.EMOJI_GRAPES): 50, # Triple Grapes
+    (config.EMOJI_ORANGE, config.EMOJI_ORANGE, config.EMOJI_ORANGE): 40, # Triple Orange
+	(config.EMOJI_LEMON, config.EMOJI_LEMON, config.EMOJI_LEMON): 30, # Triple Lemon
+    (config.EMOJI_CHERRY, config.EMOJI_CHERRY, config.EMOJI_CHERRY): 15, # Triple Cherry
+    (config.EMOJI_DIAMOND, config.EMOJI_DIAMOND, None): 40, # Two diamonds
+    (config.EMOJI_STAR, config.EMOJI_STAR, None): 30, # Two stars
 }
 
 # Helper dictionary to map payout keys to symbols for display
 payouts_symbols = {
-    (diamond, diamond, diamond): diamond,
-    (star, star, star): star,
-	(grapes, grapes, grapes): grapes,
-    (orange, orange, orange): orange,
-	(lemon, lemon, lemon): lemon,
-    (cherry, cherry, cherry): cherry,
-    (diamond, diamond, None): diamond,
-    (star, star, None): star,
+    (config.EMOJI_DIAMOND, config.EMOJI_DIAMOND, config.EMOJI_DIAMOND): config.EMOJI_DIAMOND,
+    (config.EMOJI_STAR, config.EMOJI_STAR, config.EMOJI_STAR): config.EMOJI_STAR,
+	(config.EMOJI_GRAPES, config.EMOJI_GRAPES, config.EMOJI_GRAPES): config.EMOJI_GRAPES,
+    (config.EMOJI_ORANGE, config.EMOJI_ORANGE, config.EMOJI_ORANGE): config.EMOJI_ORANGE,
+	(config.EMOJI_LEMON, config.EMOJI_LEMON, config.EMOJI_LEMON): config.EMOJI_LEMON,
+    (config.EMOJI_CHERRY, config.EMOJI_CHERRY, config.EMOJI_CHERRY): config.EMOJI_CHERRY,
+    (config.EMOJI_DIAMOND, config.EMOJI_DIAMOND, None): config.EMOJI_DIAMOND,
+    (config.EMOJI_STAR, config.EMOJI_STAR, None): config.EMOJI_STAR,
 }
 
 # Define slot machine symbols and weights
 #Cherry, Lemon, Orange, Grapes, Diamond, Star
-symbols = [cherry, lemon, orange, grapes, star, diamond] # UTF-8 symbols
+symbols = [config.EMOJI_CHERRY, config.EMOJI_LEMON, config.EMOJI_ORANGE, config.EMOJI_GRAPES, config.EMOJI_STAR, config.EMOJI_DIAMOND] # UTF-8 symbols
 weights = [0.3, 0.25, 0.2, 0.15, 0.07, 0.03] # Relative weights for each symbol
 slot_cost = 2
 num_reels = 3
@@ -810,7 +800,6 @@ async def handle_daily(message, db):
 
     # Define base daily reward
     base_daily_reward = 10 # Or make it random random.randint(5, 15)
-    gem_emoji_unicode = '\U0001F48E'
 
     try:
         doc = user_ref.get()
@@ -850,7 +839,7 @@ async def handle_daily(message, db):
         }, merge=True)
 
         # Construct response message
-        response_message = f"You have claimed your daily {base_daily_reward} gems! {gem_emoji_unicode}"
+        response_message = f"You have claimed your daily {base_daily_reward} gems! {config.EMOJI_GEM}"
         if acquisition_multiplier > 1.0:
             bonus_gems = final_daily_reward - base_daily_reward
             response_message += f"\nThanks to your Gem Acquisition Booster, you received a bonus of {bonus_gems} gem(s), for a total of {final_daily_reward}!"
@@ -881,7 +870,7 @@ async def handle_leaderboard(message, db):
             if user_data.get('gem_count', 0) > 0:
                 username = user_data.get('username', 'Unknown User')
                 gem_count = user_data.get('gem_count')
-                leaderboard_entries.append(f"**#{rank}**: {username} - {gem_count} {diamond}")
+                leaderboard_entries.append(f"**#{rank}**: {username} - {gem_count} {config.EMOJI_DIAMOND}")
                 rank += 1
         
         if not leaderboard_entries:
@@ -889,7 +878,7 @@ async def handle_leaderboard(message, db):
         else:
             response = "\n".join(leaderboard_entries)
 
-        embed = discord.Embed(title=f"{diamond} Gem Leaderboard {diamond}", description=response, colour=discord.Colour.gold())
+        embed = discord.Embed(title=f"{config.EMOJI_DIAMOND} Gem Leaderboard {config.EMOJI_DIAMOND}", description=response, colour=discord.Colour.gold())
         await message.channel.send(embed=embed)
 
     except Exception as e:
