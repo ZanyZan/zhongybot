@@ -29,7 +29,7 @@ spawned_gem_message_id = 0
 import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import firestore
-from bot_comm import command_handlers, shop_items
+from bot_comm import command_handlers
 
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_acquisition_multiplier
 first_claim_timestamp = {}
@@ -336,7 +336,7 @@ async def on_reaction_add(reaction, user):
                 user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
                 user_doc = user_doc_ref.get()
                 inventory = user_doc.to_dict().get('inventory', {}) if user_doc.exists else {}
-                acquisition_multiplier = get_acquisition_multiplier(inventory, shop_items)
+                acquisition_multiplier = get_acquisition_multiplier(inventory)
                 if acquisition_multiplier > 1.0:
                     logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
 

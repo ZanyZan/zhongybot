@@ -1,13 +1,11 @@
 import discord
 import config
-import sys
-from discord.ext import tasks
 from datetime import datetime, timedelta, timezone
 import random
 import weapons as wp
 from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, get_acquisition_multiplier
+from helper import EIGHT_BALL_ANSWERS, calculate_time, get_acquisition_multiplier, shop_items, split_response
 import math
 import logging
 # Define functions for each command
@@ -192,34 +190,7 @@ async def handle_roll(message):
 async def handle_8ball(message):
     split_message = message.content.split('8ball')
     question = split_message[1]
-    answer_dict = {
-        # Affirmative
-        0: "It is certain. As certain as taxes and server maintenance.",
-        1: "It is decidedly so. The RNG gods are smiling upon you.",
-        2: "Without a doubt. Go for it!",
-        3: "Yes, definitely. You can bet your meso on it.",
-        4: "You may rely on it. It's a sure thing.",
-        5: "As I see it, yes. The outlook is as good as hitting a double prime line.",
-        6: "Most likely. I'd put money on it, if I had any.",
-        7: "Outlook good. It's a green light from me.",
-        8: "Yes. Simple as that.",
-        9: "Signs point to yes, but don't quote me on that.",
-        # Non-committal
-        10: "Reply hazy, try again. My crystal ball is as foggy as a map full of kishin smoke.",
-        11: "Ask again later. I'm in the middle of a boss fight.",
-        12: "Better not tell you now... spoilers!",
-        13: "Cannot predict now. I'm getting server lag on that request.",
-        14: "Concentrate and ask again. Maybe sacrifice a Pitched Boss item to the RNG gods first.",
-        # Negative
-        15: "Don't count on it. The odds are worse than getting a pitched drop.",
-        16: "My reply is a resounding NO.",
-        17: "My sources (who are totally not in this room) say no.",
-        18: "Outlook not so good. It's like trying to solo Black Mage with a level 10 character.",
-        19: "Very doubtful. I have a better chance of understanding the lore.",
-        20: "Ask Greg about it. He probably knows.", # Special
-    }
-    roll = random.randint(0, 20)
-    answer = answer_dict[roll]
+    answer = random.choice(EIGHT_BALL_ANSWERS)
     title = f'You asked: "{question}"'
     response = f'Magic 8 ball says: {answer}'
     embed = discord.Embed(title=title,
@@ -492,7 +463,7 @@ weights = [0.3, 0.25, 0.2, 0.15, 0.07, 0.03] # Relative weights for each symbol
 slot_cost = 2
 num_reels = 3
 async def handle_slots(message, db):
-    if message.channel.id == config.BOT_SPAM_CHANNEL_ID: # Replace with your desired channel ID
+    if message.channel.id in config.BOT_SPAM_CHANNEL_ID: # Replace with your desired channel ID
         if db is None:  # Consider using an assertion here if db should always be initialized
             await message.channel.send("Firebase is not initialized. Cannot use the slots command.")
             return
@@ -853,7 +824,7 @@ async def handle_daily(message, db):
 
         # Check for gem acquisition booster using the helper function
         inventory = user_data.get('inventory', {})
-        acquisition_multiplier = get_acquisition_multiplier(inventory, shop_items)
+        acquisition_multiplier = get_acquisition_multiplier(inventory)
         if acquisition_multiplier > 1.0:
             logging.info(f"User {message.author.display_name} has gem booster for daily. Applying multiplier: {acquisition_multiplier}")
 
@@ -912,59 +883,7 @@ async def handle_leaderboard(message, db):
     except Exception as e:
         logging.error(f"Error retrieving leaderboard from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve the leaderboard.")
-         
-# Define the shop items
-shop_items = {
-    "gem_booster": {
-        "name": "Gem Acquisition Booster",
-        "description": "Passively increases your gem acquisition rate. (Does not apply to slots)",
-        "cost": 500, # Example cost
-        "type": "passive", # Indicate it's a passive item
-        "effect": {"acquisition_multiplier": 1.3}
-    },
-    "curse_ward": {
-        "name": "Curse Ward",
-        "description": "Supposedly improves your odds and makes you immune to misfortune.",
-        "cost": 750,
-        "type": "passive",
-        "effect": {}
-    },
-    "luck_charm": {
-        "name": "Luck Charm",
-        "description": "Supposedly boosts your item drop rate in other games. (Such as MapleStory)",
-        "cost": 1000,
-        "type": "passive",
-        "effect": {}
-    },
-    "golden_maple_leaf": {
-        "name": "Golden Maple Leaf",
-        "description": "A perfectly preserved, gilded maple leaf. A true collector's item for the distinguished Mapler.",
-        "cost": 5000,
-        "type": "passive",
-        "effect": {}
-    },
-    "pitched_fragment": {
-        "name": "Pitched Boss Fragment",
-        "description": "A fragment of a mythical boss item. It hums with untold power... or maybe it's just a shiny rock. A true status symbol.",
-        "cost": 10000,
-        "type": "passive",
-        "effect": {}
-    },
-    "zhongys_blessing": {
-        "name": "Zhongy's Blessing",
-        "description": "A small, carved charm that looks suspiciously like the bot. It offers no real benefits, but it feels nice to have.",
-        "cost": 2500,
-        "type": "passive",
-        "effect": {}
-    },
-    "zyn_ban_hammer": {
-        "name": "The Zyn Ban Hammer",
-        "description": "For the low, low price of 99999 gems, you can ban Zyn. Or can you?",
-        "cost": 99999,
-        "type": "passive",
-        "effect": {}
-    }
-}
+
 command_handlers = {
     'ursus': handle_ursus,  # Consider using a more descriptive name, like 'handle_ursus_command'
     'servertime': handle_servertime,  # Same here

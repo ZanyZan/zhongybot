@@ -1,6 +1,4 @@
-import time
 from datetime import datetime, timedelta, timezone
-import pytz
 import operator
 import random
 
@@ -185,25 +183,109 @@ def convert(seconds: int) -> str:
 
     return "%d:%02d:%02d" % (hour, minutes, seconds)
 
-def get_acquisition_multiplier(inventory, shop_items):
+def get_acquisition_multiplier(inventory: dict) -> float:
     """
     Checks a user's inventory for a gem booster and returns the corresponding
-    acquisition multiplier.
-    
-    This could be improved by using a more generic approach that allows for
-    multiple boosters or different types of effects.
-    
-    Returns:
-        float: The acquisition multiplier (defaults to 1.0 if no booster is found).
-               Should consider raising an exception or logging an error if an invalid
-               multiplier is encountered"""
-    acquisition_multiplier = 1.0  # Default multiplier
-    if not inventory:
-        return acquisition_multiplier
+    acquisition multiplier from the inventory data.
 
+    This function relies on the item's 'effect' dictionary being stored
+    in the user's inventory document in Firebase upon purchase.
+
+    Args:
+        inventory: The user's inventory dictionary from Firebase.
+
+    Returns:
+        The acquisition multiplier (defaults to 1.0 if no booster is found).
+    """
+    if not inventory:
+        return 1.0
+
+    # Check for the specific booster item in the user's inventory
     gem_booster_item = inventory.get("gem_booster")
     if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
-        booster_effect = shop_items.get("gem_booster", {}).get("effect", {})
-        acquisition_multiplier = booster_effect.get("acquisition_multiplier", 1.3)
+        # The effect is stored directly with the item in the user's inventory
+        booster_effect = gem_booster_item.get("effect", {})
+        # Get the multiplier from the effect, defaulting to 1.0 if not found
+        return booster_effect.get("acquisition_multiplier", 1.0)
     
-    return acquisition_multiplier
+    return 1.0
+
+EIGHT_BALL_ANSWERS = [
+    # Affirmative
+    "It is certain. As certain as taxes and server maintenance.",
+    "It is decidedly so. The RNG gods are smiling upon you.",
+    "Without a doubt. Go for it!",
+    "Yes, definitely. You can bet your meso on it.",
+    "You may rely on it. It's a sure thing.",
+    "As I see it, yes. The outlook is as good as hitting a double prime line.",
+    "Most likely. I'd put money on it, if I had any.",
+    "Outlook good. It's a green light from me.",
+    "Yes. Simple as that.",
+    "Signs point to yes, but don't quote me on that.",
+    # Non-committal
+    "Reply hazy, try again. My crystal ball is as foggy as a map full of kishin smoke.",
+    "Ask again later. I'm in the middle of a boss fight.",
+    "Better not tell you now... spoilers!",
+    "Cannot predict now. I'm getting server lag on that request.",
+    "Concentrate and ask again. Maybe sacrifice a Pitched Boss item to the RNG gods first.",
+    # Negative
+    "Don't count on it. The odds are worse than getting a pitched drop.",
+    "My reply is a resounding NO.",
+    "My sources (who are totally not in this room) say no.",
+    "Outlook not so good. It's like trying to solo Black Mage with a level 10 character.",
+    "Very doubtful. I have a better chance of understanding the lore.",
+    "Ask Greg about it. He probably knows.", # Special
+]
+
+# Define the shop items
+shop_items = {
+    "gem_booster": {
+        "name": "Gem Acquisition Booster",
+        "description": "Passively increases your gem acquisition rate. (Does not apply to slots)",
+        "cost": 500, # Example cost
+        "type": "passive", # Indicate it's a passive item
+        "effect": {"acquisition_multiplier": 1.3}
+    },
+    "curse_ward": {
+        "name": "Curse Ward",
+        "description": "Supposedly improves your odds and makes you more resistant to misfortune.",
+        "cost": 750,
+        "type": "passive",
+        "effect": {}
+    },
+    "luck_charm": {
+        "name": "Luck Charm",
+        "description": "Supposedly boosts your item drop rate in other games. (Such as MapleStory)",
+        "cost": 1000,
+        "type": "passive",
+        "effect": {}
+    },
+    "golden_maple_leaf": {
+        "name": "Golden Maple Leaf",
+        "description": "A perfectly preserved, gilded maple leaf. A true collector's item for the distinguished Mapler.",
+        "cost": 5000,
+        "type": "passive",
+        "effect": {}
+    },
+    "pitched_fragment": {
+        "name": "Pitched Boss Fragment",
+        "description": "A fragment of a mythical boss item. It hums with untold power... or maybe it's just a shiny rock. A true status symbol.",
+        "cost": 10000,
+        "type": "passive",
+        "effect": {}
+    },
+    "zhongys_blessing": {
+        "name": "Zhongy's Blessing",
+        "description": "A small, carved charm that looks suspiciously like the bot. It offers no real benefits, but it feels nice to have.",
+        "cost": 2500,
+        "type": "passive",
+        "effect": {}
+    },
+    "zyn_ban_hammer": {
+        "name": "The Zyn Ban Hammer",
+        "description": "For the low, low price of 99999 gems, you can ban Zyn. Or can you?",
+        "cost": 99999,
+        "type": "passive",
+        "effect": {}
+    }
+}
