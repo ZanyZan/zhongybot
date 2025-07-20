@@ -189,7 +189,7 @@ async def on_message(message):
           # Pass necessary arguments based on the command
           if command in ['ask']:
               await handler(message, db=db, model=model, max_history_length=max_history_length, discord_max_length=discord_max_length)
-          elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'inventory']:
+          elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'inventory', 'daily', 'leaderboard']:
               await handler(message, db=db)
           elif command in ['ursus', 'servertime', 'time']:
               await handler(message, my_time=my_time) # Pass my_time here

@@ -139,7 +139,7 @@ async def handle_esfera(message):
     await message.channel.send(embed=embed)
 
 async def handle_help(message):
-    response = 'Command List.\n- Use `~ursus` : to look for ursus time!.\n- Use `~servertime` : to check server\'s time (or check the clock channel!).\n- Use `~time` : if by some divine intervention you don\'t remember your own time LOL\n- You can also use `~time (+/-)(#Number)` : to check your local time in relation to server\'s reset time. eg: `~time +3` `~time -3`.\n- Use `~esfera` : if you are lazy and don\'t want to check the guides for the esfera PQ picture.\n- Use `~8ball` : to ask any yes/no questions.\n- Use `~roll` : to roll a d20 die.\n- Use `~roll d#`: to roll a d# die. eg: `~roll d40`, rolls a d40 die, etc.\n- Use `~weaponf class/weapon weapontype`: will give you the attack flame for your specified class/weapon (weapontype being Abso/Arcane/Genesis) **Except for Zero. Was lazy to implement Zero. \n- Use `~ask` to ask the bot something and get an answer. \n- Use `~deletehistory` to delete your conversation history with the bot. \n- Use `~checkgems` to see how many gems you have. \n- Use `~givegems @user <amount>` (Admin only) to give gems to a user. \n- Use `~takegems @user <amount>` (Admin only) to take gems from a user. \n- Use `~spawngem` (Admin only) to manually spawn a gem.\n- Use `~slots`: to play the slot machine!.\n- Use `~slotspayouts`: to view the slot machine payouts.\n\nCommands are not case sensitive, you can do `~UrSuS` if you want.\n \nAny issues or if you have any ideas for new commands please, let Zany know!'
+    response = 'Command List.\n- Use `~ursus` : to look for ursus time!.\n- Use `~servertime` : to check server\'s time (or check the clock channel!).\n- Use `~time` : if by some divine intervention you don\'t remember your own time LOL\n- You can also use `~time (+/-)(#Number)` : to check your local time in relation to server\'s reset time. eg: `~time +3` `~time -3`.\n- Use `~esfera` : if you are lazy and don\'t want to check the guides for the esfera PQ picture.\n- Use `~8ball` : to ask any yes/no questions.\n- Use `~roll` : to roll a d20 die.\n- Use `~roll d#`: to roll a d# die. eg: `~roll d40`, rolls a d40 die, etc.\n- Use `~weaponf class/weapon weapontype`: will give you the attack flame for your specified class/weapon (weapontype being Abso/Arcane/Genesis) **Except for Zero. Was lazy to implement Zero. \n- Use `~ask` to ask the bot something and get an answer. \n- Use `~deletehistory` to delete your conversation history with the bot. \n- Use `~checkgems` to see how many gems you have. \n- Use `~daily` to claim your daily gems.\n- Use `~leaderboard` to see the top gem holders.\n- Use `~givegems @user <amount>` (Admin only) to give gems to a user. \n- Use `~takegems @user <amount>` (Admin only) to take gems from a user. \n- Use `~spawngem` (Admin only) to manually spawn a gem.\n- Use `~slots`: to play the slot machine!.\n- Use `~slotspayouts`: to view the slot machine payouts.\n\nCommands are not case sensitive, you can do `~UrSuS` if you want.\n \nAny issues or if you have any ideas for new commands please, let Zany know!'
     embed = discord.Embed(title="Zhongy Helps",
                           description=response,
                           colour=discord.Colour.purple())
@@ -783,7 +783,87 @@ async def handle_inventory(message, db):
     except Exception as e:
         logging.error(f"Error retrieving inventory from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve your inventory.")
+        
+async def handle_daily(message, db):
+    """Handles the daily gem claim command, resetting at UTC midnight."""
+    if db is None:
+        await message.channel.send("Firebase is not initialized. Cannot claim daily gems.")
+        return
 
+    user_id = str(message.author.id)
+    user_ref = db.collection('user_gem_counts').document(user_id)
+
+    # Define daily reward
+    daily_reward = 10 # Or make it random random.randint(5, 15)
+    gem_emoji_unicode = '\U0001F48E'
+
+    try:
+        doc = user_ref.get()
+        current_time_utc = datetime.now(timezone.utc)
+
+        if doc.exists:
+            user_data = doc.to_dict()
+            last_claim_utc = user_data.get('last_daily_claim')
+
+            if last_claim_utc:
+                # Check if the last claim was on the same calendar day in UTC
+                if last_claim_utc.date() == current_time_utc.date():
+                    # Calculate time until next UTC midnight
+                    tomorrow_utc = current_time_utc.date() + timedelta(days=1)
+                    next_reset_utc = datetime.combine(tomorrow_utc, datetime.min.time(), tzinfo=timezone.utc)
+                    time_left = next_reset_utc - current_time_utc
+
+                    hours, remainder = divmod(time_left.total_seconds(), 3600)
+                    minutes, _ = divmod(remainder, 60)
+                    await message.channel.send(f"You've already claimed your daily gems today. Please wait another {int(hours)} hours and {int(minutes)} minutes for the reset.")
+                    return
+
+        user_ref.set({
+            'username': message.author.display_name,
+            'gem_count': firestore.Increment(daily_reward),
+            'last_daily_claim': current_time_utc
+        }, merge=True)
+
+        await message.channel.send(f"You have claimed your daily {daily_reward} gems! {gem_emoji_unicode}")
+        logging.info(f"User {message.author.display_name} ({user_id}) claimed their daily {daily_reward} gems.")
+    except Exception as e:
+        logging.error(f"Error processing daily claim for user {user_id}: {e}")
+        await message.channel.send("An error occurred while processing your daily claim.")
+
+async def handle_leaderboard(message, db):
+    """Displays the top 10 users with the most gems."""
+    if db is None:
+        await message.channel.send("Firebase is not initialized. Cannot display the leaderboard.")
+        return
+
+    try:
+        # Query the top 10 users by gem_count in descending order
+        users_ref = db.collection('user_gem_counts')
+        query = users_ref.order_by('gem_count', direction=firestore.Query.DESCENDING).limit(10)
+        docs = query.stream()
+
+        leaderboard_entries = []
+        rank = 1
+        for doc in docs:
+            user_data = doc.to_dict()
+            # Only show users with more than 0 gems
+            if user_data.get('gem_count', 0) > 0:
+                username = user_data.get('username', 'Unknown User')
+                gem_count = user_data.get('gem_count')
+                leaderboard_entries.append(f"**#{rank}**: {username} - {gem_count} {diamond}")
+                rank += 1
+        
+        if not leaderboard_entries:
+            response = "The leaderboard is currently empty. Go find some gems!"
+        else:
+            response = "\n".join(leaderboard_entries)
+
+        embed = discord.Embed(title=f"{diamond} Gem Leaderboard {diamond}", description=response, colour=discord.Colour.gold())
+        await message.channel.send(embed=embed)
+
+    except Exception as e:
+        logging.error(f"Error retrieving leaderboard from Firebase: {e}")
+        await message.channel.send("An error occurred while trying to retrieve the leaderboard.")
          
 # Define the shop items
 shop_items = {
@@ -822,6 +902,8 @@ command_handlers = {
     'deletehistory': handle_deletehistory,
     'forward': handle_forward,
     'checkgems': handle_checkgems,
+    'daily': handle_daily,
+    'leaderboard': handle_leaderboard,
     'givegems': handle_givegems,
     'takegems': handle_takegems,
     'slots': handle_slots,
