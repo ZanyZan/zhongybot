@@ -6,7 +6,8 @@ import random
 import weapons as wp
 from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day
+from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, get_acquisition_multiplier
+import math
 import logging
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -793,13 +794,14 @@ async def handle_daily(message, db):
     user_id = str(message.author.id)
     user_ref = db.collection('user_gem_counts').document(user_id)
 
-    # Define daily reward
-    daily_reward = 10 # Or make it random random.randint(5, 15)
+    # Define base daily reward
+    base_daily_reward = 10 # Or make it random random.randint(5, 15)
     gem_emoji_unicode = '\U0001F48E'
 
     try:
         doc = user_ref.get()
         current_time_utc = datetime.now(timezone.utc)
+        user_data = {} # Initialize user_data
 
         if doc.exists:
             user_data = doc.to_dict()
@@ -818,14 +820,29 @@ async def handle_daily(message, db):
                     await message.channel.send(f"You've already claimed your daily gems today. Please wait another {int(hours)} hours and {int(minutes)} minutes for the reset.")
                     return
 
+        # Check for gem acquisition booster using the helper function
+        inventory = user_data.get('inventory', {})
+        acquisition_multiplier = get_acquisition_multiplier(inventory, shop_items)
+        if acquisition_multiplier > 1.0:
+            logging.info(f"User {message.author.display_name} has gem booster for daily. Applying multiplier: {acquisition_multiplier}")
+
+        # Calculate final gem count after applying multiplier
+        final_daily_reward = math.ceil(base_daily_reward * acquisition_multiplier)
+
         user_ref.set({
             'username': message.author.display_name,
-            'gem_count': firestore.Increment(daily_reward),
+            'gem_count': firestore.Increment(final_daily_reward),
             'last_daily_claim': current_time_utc
         }, merge=True)
 
-        await message.channel.send(f"You have claimed your daily {daily_reward} gems! {gem_emoji_unicode}")
-        logging.info(f"User {message.author.display_name} ({user_id}) claimed their daily {daily_reward} gems.")
+        # Construct response message
+        response_message = f"You have claimed your daily {base_daily_reward} gems! {gem_emoji_unicode}"
+        if acquisition_multiplier > 1.0:
+            bonus_gems = final_daily_reward - base_daily_reward
+            response_message += f"\nThanks to your Gem Acquisition Booster, you received a bonus of {bonus_gems} gem(s), for a total of {final_daily_reward}!"
+
+        await message.channel.send(response_message)
+        logging.info(f"User {message.author.display_name} ({user_id}) claimed their daily {final_daily_reward} gems.")
     except Exception as e:
         logging.error(f"Error processing daily claim for user {user_id}: {e}")
         await message.channel.send("An error occurred while processing your daily claim.")

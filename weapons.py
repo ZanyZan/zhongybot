@@ -196,84 +196,81 @@ weapon_stats = {
         },
 }
 
-weapon_alias = {
-    "Pathfinder": weapon_stats["Ancient_Bow"],
-    "pf": weapon_stats["Ancient_Bow"],
-    "Blaster": weapon_stats["Arm_Cannon"],
-    "Adele": weapon_stats["Bladecaster"],
-    "Bowmaster": weapon_stats["Bow"],
-    "bm": weapon_stats["Bow"],
-    "Phantom": weapon_stats["Cane"],
-    "Cadena": weapon_stats["Chain"],
-    "Khali": weapon_stats["Chakram"],
-    "NightLord": weapon_stats["Claw"],
-    "nl": weapon_stats["Claw"],
-    "Marksman": weapon_stats["Crossbow"],
-    "mm": weapon_stats["Crossbow"],
-    "WildHunter": weapon_stats["Crossbow"],
-    "wh": weapon_stats["Crossbow"],
-    "Shadower": weapon_stats["Dagger"],
-    "shad": weapon_stats["Dagger"],
-    "DualBlade": weapon_stats["Dagger"],
-    "db": weapon_stats["Dagger"],
-    "DemonAvenger": weapon_stats["Desperado"],
-    "da": weapon_stats["Desperado"],
-    "Mercedes": weapon_stats["Dual_Bowgun"],
-    "merc": weapon_stats["Dual_Bowgun"],
-    "Kanna": weapon_stats["Fan"],
-    "Corsair": weapon_stats["Gun"],
-    "Mechanic": weapon_stats["Gun"],
-    "mech": weapon_stats["Gun"],
-    "Cannoneer": weapon_stats["Hand_Cannon"],
-    "Hayato": weapon_stats["Katana"],
-    "Shade": weapon_stats["Knuckle"],
-    "ThunderBreaker": weapon_stats["Knuckle"],
-    "tb": weapon_stats["Knuckle"],
-    "Buccaneer": weapon_stats["Knuckle"],
-    "bucc": weapon_stats["Knuckle"],
-    "Ark": weapon_stats["Knuckle"],
-    "Illium": weapon_stats["Lucent_Gauntlet"],
-    "Aran": weapon_stats["Polearm"],
-    "Kinesis": weapon_stats["Psy-limiter"],
-    "Hoyoung": weapon_stats["Ritual_Fan"],
-    "hy": weapon_stats["Ritual_Fan"],
-    "Lynn": weapon_stats["Scepter"],
-    "Luminous": weapon_stats["Shining_Rod"],
-    "lumi": weapon_stats["Shining_Rod"],
-    "AngelicBuster": weapon_stats["Soul_Shooter"],
-    "ab": weapon_stats["Soul_Shooter"],
-    "DarkKnight": weapon_stats["Spear"],
-    "dk": weapon_stats["Spear"],
-    "I/L": weapon_stats["Staff"],
-    "F/P": weapon_stats["Staff"],
-    "Bishop": weapon_stats["Staff"],
-    "Evan": weapon_stats["Staff"],
-    "BlazeWizard": weapon_stats["Staff"],
-    "bw": weapon_stats["Staff"],
-    "BattleMage": weapon_stats["Staff"],
-    "bam": weapon_stats["Staff"],
-    "DemonSlayer": weapon_stats["2H_Blunt"],
-    "ds": weapon_stats["2H_Blunt"],
-    "Paladin": weapon_stats["2H_Blunt"],
-    "Hero": weapon_stats["2H_Axe"],
-    "Xenon": weapon_stats["Whip_Blade"],
-    "Lara": weapon_stats["Wand"],
-    "Kain": weapon_stats["Whispershot"],
-    "MoXuan": weapon_stats["Martial_Brace"],
-    "mx": weapon_stats["Martial_Brace"],
-    "DawnWarrior": weapon_stats["2H_Sword"],
-    "dw": weapon_stats["2H_Sword"],
-    "WindArcher": weapon_stats["Bow"],
-    "wa": weapon_stats["Bow"],
-    "NightWalker": weapon_stats["Claw"],
-    "nw": weapon_stats["Claw"],
-    "Sia": weapon_stats["Celestial_Light"],
+# A mapping of weapon types to the classes and aliases that use them.
+# This is much easier to read and maintain than a flat alias dictionary.
+CLASS_WEAPONS_MAP = {
+    "Ancient_Bow": ["Pathfinder", "pf"],
+    "Arm_Cannon": ["Blaster"],
+    "Bladecaster": ["Adele"],
+    "Bow": ["Bowmaster", "bm", "WindArcher", "wa"],
+    "Cane": ["Phantom"],
+    "Chain": ["Cadena"],
+    "Chakram": ["Khali"],
+    "Claw": ["NightLord", "nl", "NightWalker", "nw"],
+    "Crossbow": ["Marksman", "mm", "WildHunter", "wh"],
+    "Dagger": ["Shadower", "shad", "DualBlade", "db"],
+    "Desperado": ["DemonAvenger", "da"],
+    "Dual_Bowgun": ["Mercedes", "merc"],
+    "Fan": ["Kanna"],
+    "Gun": ["Corsair", "Mechanic", "mech"],
+    "Hand_Cannon": ["Cannoneer"],
+    "Katana": ["Hayato"],
+    "Knuckle": ["Shade", "ThunderBreaker", "tb", "Buccaneer", "bucc", "Ark"],
+    "Lucent_Gauntlet": ["Illium"],
+    "Polearm": ["Aran"],
+    "Psy-limiter": ["Kinesis"],
+    "Ritual_Fan": ["Hoyoung", "hy"],
+    "Scepter": ["Lynn"],
+    "Shining_Rod": ["Luminous", "lumi"],
+    "Soul_Shooter": ["AngelicBuster", "ab"],
+    "Spear": ["DarkKnight", "dk"],
+    "Staff": ["I/L", "F/P", "Bishop", "Evan", "BlazeWizard", "bw", "BattleMage", "bam"],
+    "2H_Blunt": ["DemonSlayer", "ds", "Paladin", "pally"],
+    "2H_Axe": ["Hero"],
+    "2H_Sword": ["DawnWarrior", "dw"],
+    "Wand": ["Lara"],
+    "Whip_Blade": ["Xenon"],
+    "Whispershot": ["Kain"],
+    "Martial_Brace": ["MoXuan", "mx"],
+    "Celestial_Light": ["Sia"],
 }
+
 weapon_flame = {"Abso": {"T3": .15, "T4": .22, "T5": .3025, "T6": .3993, "T7": .512435},
          "Arcane": {"T3": .18, "T4": .264, "T5": .363, "T6": .47916, "T7": .614922},
          "Genesis": {"T3": .18, "T4": .264, "T5": .363, "T6": .47916, "T7": .614922}}
 import math
-def weapon_calc(attack, weapon_type):
+
+def _create_weapon_lookup():
+    """Generates a unified, case-insensitive lookup dictionary for weapons and classes."""
+    lookup = {}
+    # Add direct weapon stats (e.g., "bow", "staff")
+    for weapon, stats in weapon_stats.items():
+        lookup[weapon.lower()] = stats
+
+    # Add class aliases from the map
+    for weapon, aliases in CLASS_WEAPONS_MAP.items():
+        if weapon in weapon_stats:
+            stats = weapon_stats[weapon]
+            for alias in aliases:
+                lookup[alias.lower()] = stats
+    return lookup
+
+# A unified, case-insensitive dictionary for easy lookups from bot commands.
+# Maps all weapon names, class names, and aliases to their stat dictionaries.
+WEAPON_LOOKUP = _create_weapon_lookup()
+
+def weapon_calc(attack: int, weapon_type: str) -> str:
+    """
+    Calculates the flame attack values for a given base attack and weapon tier.
+
+    Args:
+        attack: The base attack of the weapon.
+        weapon_type: The type of the weapon ('Abso', 'Arcane', 'Genesis').
+
+    Returns:
+        A formatted string of flame tiers and their corresponding attack values,
+        or an error message if the weapon type is invalid.
+    """
     if weapon_type in weapon_flame:
         calc = {tier: math.ceil(attack * flame) for tier, flame in weapon_flame[weapon_type].items()}
         return(", ".join(f"{k} = {v}" for k, v in calc.items()))
