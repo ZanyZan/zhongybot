@@ -1,7 +1,7 @@
 import discord
 import config
 from datetime import datetime, timedelta, timezone
-import random
+import random   
 import weapons as wp
 from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
@@ -706,7 +706,7 @@ async def handle_buy(message, db):
 
     try:
         @firestore.transactional
-        def buy_item_transaction(transaction, user_ref, item, item_cost, user_display_name):
+        def buy_item_transaction(transaction, user_ref, item_id, item_details, user_display_name):
             snapshot = user_ref.get(transaction=transaction)
             user_data = snapshot.to_dict() if snapshot.exists else None
 
@@ -723,25 +723,28 @@ async def handle_buy(message, db):
             inventory = user_data.get('inventory', {}) # Use .get with a default value
 
             # Check if the user already owns the unique item
-            if item_to_buy.get("type") != "consumable" and inventory.get(item, {}).get('quantity', 0) > 0:
+            if item_details.get("type") != "consumable" and inventory.get(item_id, {}).get('quantity', 0) > 0:
                  return "already_owned"
 
-
+            item_cost = item_details['cost']
             if current_gems < item_cost:
                 return "not_enough_gems"
 
             new_gems = current_gems - item_cost
-            current_quantity = inventory.get(item, {}).get('quantity', 0) # Use .get with a default value
-            inventory[item] = {'quantity': current_quantity + 1}
+            current_quantity = inventory.get(item_id, {}).get('quantity', 0) # Use .get with a default value
+            item_effect = item_details.get('effect', {})
+            inventory[item_id] = {'quantity': current_quantity + 1, 'effect': item_effect}
             user_data['inventory'] = inventory # Update inventory in user_data
 
             # Update the document with new gem count and inventory
             transaction.update(user_ref, {'gem_count': new_gems, 'inventory': user_data['inventory']})
 
             return {"status": "success", "new_gems": new_gems}
-
-
-        transaction_result = buy_item_transaction(db.transaction(), user_doc_ref, item_id, item_to_buy['cost'], message.author.display_name)
+        
+        # Pass the entire item_to_buy dictionary into the transaction
+        transaction_result = buy_item_transaction(
+            db.transaction(), user_doc_ref, item_id, item_to_buy, message.author.display_name
+        )
 
         if transaction_result == "not_enough_gems":
             await message.channel.send(f"You don't have enough gems to buy **{item_to_buy['name']}**. You need {item_to_buy['cost']} gem(s).")

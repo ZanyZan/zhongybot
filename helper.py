@@ -183,6 +183,7 @@ def convert(seconds: int) -> str:
 
     return "%d:%02d:%02d" % (hour, minutes, seconds)
 
+
 def get_acquisition_multiplier(inventory: dict) -> float:
     """
     Checks a user's inventory for a gem booster and returns the corresponding
@@ -209,6 +210,9 @@ def get_acquisition_multiplier(inventory: dict) -> float:
         return booster_effect.get("acquisition_multiplier", 1.0)
     
     return 1.0
+
+
+
 
 EIGHT_BALL_ANSWERS = [
     # Affirmative
