@@ -10,53 +10,31 @@ import math
 import logging
 # Define functions for each command
 async def handle_ursus(message, my_time):
-    current_dt = datetime.fromtimestamp(my_time)
-    day = current_dt.day
-    month = current_dt.month
-    year = current_dt.year
+    # All calculations should be in UTC, as that's MapleStory's server time.
+    now_utc = datetime.fromtimestamp(my_time, timezone.utc)
 
-    # Define Ursus times for the current day
-    ursus_start1_epoch_current_day = int(datetime(year, month, day, 20, 0, 0).timestamp())
-    next_day_dt = current_dt + timedelta(days=1)
-    ursus_end1_epoch_next_day = int(datetime(next_day_dt.year, next_day_dt.month, next_day_dt.day, 0, 0, 0).timestamp())
+    # Define Ursus time slots for the current UTC day
+    today_1300 = now_utc.replace(hour=13, minute=0, second=0, microsecond=0)
+    today_1700 = now_utc.replace(hour=17, minute=0, second=0, microsecond=0)
+    today_2000 = now_utc.replace(hour=20, minute=0, second=0, microsecond=0)
+    # The second window ends at midnight of the *next* day
+    tomorrow_0000 = (now_utc + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    ursus_start2_epoch_current_day = int(datetime(year, month, day, 13, 0, 0).timestamp())
-    ursus_end2_epoch_current_day = int(datetime(year, month, day, 17, 0, 0).timestamp())
+    ursus_slots = [(today_1300, today_1700), (today_2000, tomorrow_0000)]
 
-    # Determine current status and remaining time using a more concise approach.
-    if ursus_start1_epoch_current_day < my_time < ursus_end1_epoch_next_day:
-        # Ursus active (night run)
-        time_difference = ursus_end1_epoch_next_day - my_time
-        status_message = 'Ursus 2x meso is currently active, it will end in '
-    elif ursus_start2_epoch_current_day < my_time < ursus_end2_epoch_current_day:
-        # Ursus active (day run)
-        time_difference = ursus_end2_epoch_current_day - my_time
-        status_message = 'Ursus 2x meso is currently active, it will end in '
-    elif my_time < ursus_start2_epoch_current_day:
-        # Ursus inactive (before first run)
-        time_difference = ursus_start2_epoch_current_day - my_time
-        status_message = 'Ursus 2x meso is not active, it will start in '
-    elif ursus_end2_epoch_current_day < my_time < ursus_start1_epoch_current_day:
-        # Ursus inactive (between runs)
-        time_difference = ursus_start1_epoch_current_day - my_time
-        status_message = 'Ursus 2x meso is not active, it will start in '
+    # Find the current or next Ursus event
+    for start, end in ursus_slots:
+        if start <= now_utc < end:
+            status_message = f"Ursus 2x meso is currently **active** and ends {discord.utils.format_dt(end, style='R')}."
+            break
     else:
-        # Fallback (should not be reached under normal circumstances)
-        status_message = "Unable to determine next Ursus time."
-        time_difference = 0
+        future_starts = [s for s, _ in ursus_slots if s > now_utc]
+        next_start = min(future_starts) if future_starts else (now_utc + timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
+        status_message = f"Ursus 2x meso is **not active**. The next session starts {discord.utils.format_dt(next_start, style='R')}."
 
-    # Combine message based on status or use the fallback message
-    if time_difference > 0:
-        response = status_message + str(timedelta(seconds=time_difference))
-    else:
-        response = status_message  # Use fallback message directly
-
-    # Construct the full response including all Ursus times
-    full_response = (
-        'Ursus 2x meso is active between <t:' + str(ursus_start1_epoch_current_day) + ':t> and <t:' + str(ursus_end1_epoch_next_day) + ':t> '
-        'and between <t:' + str(ursus_start2_epoch_current_day) + ':t> and <t:' + str(ursus_end2_epoch_current_day) + ':t>\n' + response
-    )
-
+    schedule_info = (f"Ursus 2x meso is active between {discord.utils.format_dt(today_1300, style='t')} - {discord.utils.format_dt(today_1700, style='t')} "
+                     f"and {discord.utils.format_dt(today_2000, style='t')} - {discord.utils.format_dt(tomorrow_0000, style='t')} (UTC).")
+    full_response = f"{status_message}\n\n{schedule_info}"
     embed = discord.Embed(description=full_response, colour=discord.Colour.purple())
     await message.channel.send(embed=embed)
 
