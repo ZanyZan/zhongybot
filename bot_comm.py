@@ -20,10 +20,10 @@ async def handle_ursus(message, my_time):
     # Define Ursus time slots for the current UTC day.
     today_0100 = now_utc.replace(hour=1, minute=0, second=0, microsecond=0)
     today_0500 = now_utc.replace(hour=5, minute=0, second=0, microsecond=0)
-    today_1300 = now_utc.replace(hour=13, minute=0, second=0, microsecond=0)
-    today_1700 = now_utc.replace(hour=17, minute=0, second=0, microsecond=0)
+    today_1800 = now_utc.replace(hour=18, minute=0, second=0, microsecond=0)
+    today_2200 = now_utc.replace(hour=22, minute=0, second=0, microsecond=0)
 
-    ursus_slots = [(today_0100, today_0500), (today_1300, today_1700)]
+    ursus_slots = [(today_0100, today_0500), (today_1800, today_2200)]
 
     # Find the current or next Ursus event
     for start, end in ursus_slots:
@@ -39,7 +39,7 @@ async def handle_ursus(message, my_time):
 
     # Create the schedule information string using the correct times.
     schedule_info = (f"Ursus 2x meso is active between {discord.utils.format_dt(today_0100, style='t')} - {discord.utils.format_dt(today_0500, style='t')} "
-                     f"and {discord.utils.format_dt(today_1300, style='t')} - {discord.utils.format_dt(today_1700, style='t')} (UTC).")
+                     f"and {discord.utils.format_dt(today_1800, style='t')} - {discord.utils.format_dt(today_2200, style='t')} (UTC).")
     full_response = f"{status_message}\n\n{schedule_info}"
     embed = discord.Embed(description=full_response, colour=discord.Colour.purple())
     await message.channel.send(embed=embed)
