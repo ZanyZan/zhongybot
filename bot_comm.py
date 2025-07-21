@@ -11,8 +11,8 @@ import logging
 # Define functions for each command
 async def handle_ursus(message, my_time):
     # All calculations should be in UTC, as that's MapleStory's server time.
-    now_utc = datetime.fromtimestamp(my_time, timezone.utc)
-
+    # We get the current time directly to ensure accuracy, ignoring the passed `my_time`.
+    now_utc = datetime.now(timezone.utc)
     # Define Ursus time slots for the current UTC day
     today_1300 = now_utc.replace(hour=13, minute=0, second=0, microsecond=0)
     today_1700 = now_utc.replace(hour=17, minute=0, second=0, microsecond=0)
