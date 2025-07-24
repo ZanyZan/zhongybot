@@ -285,6 +285,13 @@ shop_items = {
         "type": "passive",
         "effect": {}
     },
+    "zany_hex": {
+        "name": "Zany Hex",
+        "description": "Curses the targeted user for 2 hours.",
+        "cost": 100,
+        "type": "consumable",
+        "effect": {"duration_hours": 2, "effect_type": "curse"}
+    },
     "zyn_ban_hammer": {
         "name": "The Zyn Ban Hammer",
         "description": "For the low, low price of 99999 gems, you can ban Zyn. Or can you?",

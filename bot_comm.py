@@ -480,23 +480,23 @@ async def handle_slots(message, db):
             def play_slots_transaction(transaction, user_ref, cost):
                 snapshot = user_ref.get(transaction=transaction)
                 if not snapshot.exists:
-                    return "no_gems" # User not found in database
+                    return "no_gems", 0 # User not found in database
 
                 current_gems = snapshot.get('gem_count') or 0 # Use .get with default value
 
                 if current_gems < cost:
-                    return "not_enough_gems" # User doesn't have enough gems
+                    return "not_enough_gems", current_gems # User doesn't have enough gems
                 else:
                     new_gems = current_gems - cost
                     transaction.update(user_ref, {'gem_count': new_gems})
-                    return "success" # Gems deducted successfully
+                    return "success", current_gems # Gems deducted successfully
 
-            transaction_result = play_slots_transaction(db.transaction(), user_gem_counts_ref, total_cost)
+            transaction_result, current_gems = play_slots_transaction(db.transaction(), user_gem_counts_ref, total_cost)
 
             if transaction_result == "no_gems":
                 await message.channel.send(f"{message.author.display_name}, you don't have any gems yet. The slot machine costs {slot_cost} gem(s) per roll.")
             elif transaction_result == "not_enough_gems":
-                await message.channel.send(f"{message.author.display_name}, you need {total_cost} gem(s) to play the slot machine {num_rolls} time(s). You currently have {user_gem_counts_ref.get(field_paths=[FieldPath(['gem_count'])]).to_dict().get('gem_count', 0)} gems.") # Fetch updated count for message
+                await message.channel.send(f"{message.author.display_name}, you need {total_cost} gem(s) to play the slot machine {num_rolls} time(s). You currently have {current_gems} gems.")
             elif transaction_result == "success":
                 await message.channel.send(f"{message.author.display_name} paid {total_cost} gem(s) to play the slot machine {num_rolls} time(s).")
 
@@ -551,12 +551,12 @@ async def handle_slots(message, db):
                 updated_doc = user_gem_counts_ref.get()
                 updated_gem_count = updated_doc.to_dict().get('gem_count', 0) if updated_doc.exists else 0
 
-                 # Construct and send the final message
+                # Construct and send the final message
                 final_message = results_message
                 if total_winnings > 0:
-                     final_message += f"\nTotal winnings: {total_winnings} gem(s)."
+                    final_message += f"\nTotal winnings: {total_winnings} gem(s)."
                 else:
-                     final_message += "\nNo total winnings this time."
+                    final_message += "\nNo total winnings this time."
 
                 final_message += f"\nYour new gem balance is: {updated_gem_count}"
 
@@ -896,6 +896,3 @@ command_handlers = {
     'buy': handle_buy,
     'inventory': handle_inventory,  # Consider making this a property of a user class
 }
-
-#  Consider using a class to encapsulate user-related data and operations (gems, inventory, etc.)
-# This would improve code organization and make it easier to manage user data.
