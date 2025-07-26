@@ -1,13 +1,14 @@
 import discord
 import config
 from datetime import datetime, timedelta, timezone
-import random   
+import random
 import weapons as wp
 from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
 from helper import EIGHT_BALL_ANSWERS, calculate_time, get_acquisition_multiplier, shop_items, split_response
 import math
 import logging
+import asyncio
 # Define functions for each command
 async def handle_ursus(message, my_time):
     """
@@ -473,6 +474,10 @@ async def handle_slots(message, db):
         user_id = str(message.author.id)
         user_gem_counts_ref = db.collection('user_gem_counts').document(user_id)
 
+        # Check for rigged ticket BEFORE payment transaction
+        user_doc = user_gem_counts_ref.get()
+        inventory = user_doc.to_dict().get('inventory', {}) if user_doc.exists else {}
+        has_rigged_ticket = inventory.get('rigged_ticket', {}).get('quantity', 0) > 0
         total_cost = slot_cost * num_rolls
 
         try:
@@ -498,12 +503,42 @@ async def handle_slots(message, db):
             elif transaction_result == "not_enough_gems":
                 await message.channel.send(f"{message.author.display_name}, you need {total_cost} gem(s) to play the slot machine {num_rolls} time(s). You currently have {current_gems} gems.")
             elif transaction_result == "success":
-                await message.channel.send(f"{message.author.display_name} paid {total_cost} gem(s) to play the slot machine {num_rolls} time(s).")
+                payment_message = f"{message.author.display_name} paid {total_cost} gem(s) to play the slot machine {num_rolls} time(s)."
+                await message.channel.send(payment_message)
+
+                ticket_consumed_this_turn = False
+                # If the user has a ticket, consume it now in a separate transaction
+                if has_rigged_ticket:
+                    @firestore.transactional
+                    def consume_ticket_transaction(transaction, user_ref):
+                        snapshot = user_ref.get(transaction=transaction)
+                        if not snapshot.exists:
+                            return False
+                        
+                        inventory = snapshot.to_dict().get('inventory', {})
+                        ticket_data = inventory.get('rigged_ticket')
+
+                        if not ticket_data or ticket_data.get('quantity', 0) <= 0:
+                            return False # No ticket to consume
+
+                        # Decrement ticket quantity
+                        inventory['rigged_ticket']['quantity'] -= 1
+                        
+                        # If quantity is 0, remove the item from inventory
+                        if inventory['rigged_ticket']['quantity'] == 0:
+                            del inventory['rigged_ticket']
+                        
+                        transaction.update(user_ref, {'inventory': inventory})
+                        return True
+
+                    ticket_consumed_this_turn = consume_ticket_transaction(db.transaction(), user_gem_counts_ref)
+                    if ticket_consumed_this_turn:
+                        await message.channel.send("You slyly use a Rigged Ticket for your first spin...")
 
                 total_winnings = 0
                 results_message = ""
 
-                for _ in range(num_rolls):
+                for i in range(num_rolls):
 
                     # Simulate the spin
                     result = random.choices(symbols, weights=weights, k=num_reels)
@@ -511,26 +546,37 @@ async def handle_slots(message, db):
                     winnings = 0
 
                     # Check for winning combinations
-                    # Check for three of a kind
-                    if result[0] == result[1] == result[2]:
-                        combination = (result[0], result[1], result[2])
-                        if combination in payouts:
-                            winnings = payouts[combination]
-                    # Check for two of a kind (first two symbols)
-                    elif result[0] == result[1]:
-                         combination = (result[0], result[1], None)
-                         if combination in payouts:
-                             winnings = payouts[combination]
-                    # Check for two of a kind (last two symbols)
-                    elif result[1] == result[2]:
-                         combination = (result[1], result[2], None)
-                         if combination in payouts:
-                             winnings = payouts[combination]
-                    # Check for two of a kind (first and last symbols)
-                    elif result[0] == result[2]:
-                         combination = (result[0], result[2], None)
-                         if combination in payouts:
-                             winnings = payouts[combination]
+                    # Check if this is the first roll and a ticket was successfully consumed
+                    if i == 0 and ticket_consumed_this_turn:
+                        # Force a random win between 15 and 50 gems.
+                        # Filter payouts to get combinations in the desired range, excluding "two of a kind" for simplicity.
+                        small_win_payouts = {k: v for k, v in payouts.items() if 15 <= v <= 40 and None not in k}
+                        # Randomly select one of the small win combinations
+                        rigged_combination = random.choice(list(small_win_payouts.keys()))
+                        result = list(rigged_combination)
+                        winnings = small_win_payouts[rigged_combination]
+                    else:
+                        # Normal random spin
+                        # Check for three of a kind
+                        if result[0] == result[1] == result[2]:
+                            combination = (result[0], result[1], result[2])
+                            if combination in payouts:
+                                winnings = payouts[combination]
+                        # Check for two of a kind (first two symbols)
+                        elif result[0] == result[1]:
+                            combination = (result[0], result[1], None)
+                            if combination in payouts:
+                                winnings = payouts[combination]
+                        # Check for two of a kind (last two symbols)
+                        elif result[1] == result[2]:
+                            combination = (result[1], result[2], None)
+                            if combination in payouts:
+                                winnings = payouts[combination]
+                        # Check for two of a kind (first and last symbols)
+                        elif result[0] == result[2]:
+                            combination = (result[0], result[2], None)
+                            if combination in payouts:
+                                winnings = payouts[combination]
 
                     total_winnings += winnings
                     results_message += f"Spin result: {' | '.join(result)}"
@@ -775,6 +821,85 @@ async def handle_inventory(message, db):
     except Exception as e:
         logging.error(f"Error retrieving inventory from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve your inventory.")
+
+async def handle_use(message, db):
+    """Handles the ~use command for consumable items."""
+    if db is None:
+        await message.channel.send("Firebase is not initialized. Cannot use items.")
+        return
+
+    args = message.content.split()
+    if len(args) < 2:
+        await message.channel.send("Please specify the item you want to use. Usage: `~use <item_id>`")
+        return
+
+    item_id_to_use = args[1].lower()
+    item_details = shop_items.get(item_id_to_use)
+
+    if not item_details or item_details.get("type") != "consumable":
+        await message.channel.send(f"Item with ID `{item_id_to_use}` is not a usable item.")
+        return
+
+    user_id = str(message.author.id)
+    user_doc_ref = db.collection('user_gem_counts').document(user_id)
+
+    # Transaction to consume the item
+    @firestore.transactional
+    def consume_item_transaction(transaction, user_ref, item_id):
+        snapshot = user_ref.get(transaction=transaction)
+        if not snapshot.exists:
+            return "no_inventory"
+
+        inventory = snapshot.to_dict().get('inventory', {})
+        item_data = inventory.get(item_id)
+
+        if not item_data or item_data.get('quantity', 0) <= 0:
+            return "not_owned"
+
+        # Decrement item quantity
+        inventory[item_id]['quantity'] -= 1
+        
+        # If quantity is 0, remove the item from inventory
+        if inventory[item_id]['quantity'] == 0:
+            del inventory[item_id]
+        
+        transaction.update(user_ref, {'inventory': inventory})
+        return "success"
+
+    try:
+        consumption_result = consume_item_transaction(db.transaction(), user_doc_ref, item_id_to_use)
+
+        if consumption_result in ["no_inventory", "not_owned"]:
+            await message.channel.send(f"You do not have a **{item_details['name']}** to use.")
+            return
+        
+        if consumption_result == "success":
+            await message.channel.send(f"{message.author.display_name} opens the **{item_details['name']}**...")
+            await asyncio.sleep(1)  # A little dramatic pause
+
+            if item_id_to_use == "suspicious_bag":
+                outcomes = ["win_gems", "lose_gems", "nothing", "curse"]
+                weights = [0.25, 0.15, 0.50, 0.10]  # 25% win, 15% lose, 50% nothing, 10% curse
+                chosen_outcome = random.choices(outcomes, weights=weights, k=1)[0]
+
+                if chosen_outcome == "win_gems":
+                    gems_won = random.randint(25, 100)
+                    user_doc_ref.update({'gem_count': firestore.Increment(gems_won)})
+                    await message.channel.send(f"Jackpot! You found **{gems_won}** gems inside! {config.EMOJI_GEM}")
+                elif chosen_outcome == "lose_gems":
+                    gems_lost = random.randint(5, 25)
+                    user_doc_ref.update({'gem_count': firestore.Increment(-gems_lost)})
+                    await message.channel.send(f"Oh no! The bag had a hole... you lost **{gems_lost}** gems. {config.EMOJI_GEM}")
+                elif chosen_outcome == "nothing":
+                    await message.channel.send("You open the bag... it's full of dust. You got nothing.")
+                elif chosen_outcome == "curse":
+                    curses = ["A mysterious voice whispers, 'Your shoe is untied.' You look down. It isn't. You feel... watched.", "The bag contained a single, ominous-looking sock. You now feel a strange compulsion to find its owner.", "As you open the bag, a cloud of glitter explodes, covering you. You'll be finding it for weeks."]
+                    await message.channel.send(random.choice(curses))
+            # You can add more `elif item_id_to_use == "other_item":` blocks here for other consumables.
+            
+    except Exception as e:
+        logging.error(f"Error using item for user {user_id}: {e}")
+        await message.channel.send("An error occurred while trying to use the item.")
         
 async def handle_daily(message, db):
     """Handles the daily gem claim command, resetting at UTC midnight."""
@@ -895,4 +1020,5 @@ command_handlers = {
     'shop': handle_shop,
     'buy': handle_buy,
     'inventory': handle_inventory,  # Consider making this a property of a user class
+    'use': handle_use,
 }

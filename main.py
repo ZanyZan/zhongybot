@@ -168,7 +168,7 @@ async def handle_command(message):
         kwargs = {}
         if command in ['ask']:
             kwargs = {'db': db, 'model': model, 'max_history_length': config.MAX_HISTORY_LENGTH, 'discord_max_length': config.DISCORD_MAX_LENGTH}
-        elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'inventory', 'daily', 'leaderboard']:
+        elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'inventory', 'daily', 'leaderboard', 'use']:
             kwargs = {'db': db}
         elif command in ['ursus', 'servertime', 'time']:
             kwargs = {'my_time': my_time}

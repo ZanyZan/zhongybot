@@ -285,18 +285,25 @@ shop_items = {
         "type": "passive",
         "effect": {}
     },
-    "zany_hex": {
-        "name": "Zany Hex",
-        "description": "Curses the targeted user for 2 hours.",
-        "cost": 100,
-        "type": "consumable",
-        "effect": {"duration_hours": 2, "effect_type": "curse"}
-    },
     "zyn_ban_hammer": {
         "name": "The Zyn Ban Hammer",
         "description": "For the low, low price of 99999 gems, you can ban Zyn. Or can you?",
         "cost": 99999,
         "type": "passive",
         "effect": {}
+    },
+    "suspicious_bag": {
+        "name": "Suspicious-Looking Bag",
+        "description": "What's inside? Could be gems, could be nothing, or it could be a curse that makes the bot mock you for an hour. High risk, high reward!",
+        "cost": 50,
+        "type": "consumable",
+        "effect": {}
+    },
+    "rigged_ticket": {
+        "name": "Slot Machine Rigged Ticket",
+        "description": "Guarantees a small win on your next slot machine pull. One-time use. Don't tell Zany.",
+        "cost": 25,
+        "type": "consumable",
+        "effect": {"guaranteed_slot_win": "small"}
     }
 }
