@@ -550,7 +550,7 @@ async def handle_slots(message, db):
                     if i == 0 and ticket_consumed_this_turn:
                         # Force a random win between 15 and 50 gems.
                         # Filter payouts to get combinations in the desired range, excluding "two of a kind" for simplicity.
-                        small_win_payouts = {k: v for k, v in payouts.items() if 15 <= v <= 40 and None not in k}
+                        small_win_payouts = {k: v for k, v in payouts.items() if 15 <= v <= 30 and None not in k}
                         # Randomly select one of the small win combinations
                         rigged_combination = random.choice(list(small_win_payouts.keys()))
                         result = list(rigged_combination)
@@ -997,6 +997,80 @@ async def handle_leaderboard(message, db):
         logging.error(f"Error retrieving leaderboard from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve the leaderboard.")
 
+async def handle_starforce(message, db):
+    """Handles the ~starforce command for a high-risk, high-reward gamble."""
+    if db is None:
+        await message.channel.send("Firebase is not initialized. Cannot use this command.")
+        return
+
+    # --- Game Parameters ---
+    COST = 20
+    SUCCESS_PAYOUT = 30  # Total gems returned on success (20 cost + 10 profit)
+    BOOM_PENALTY = 50    # Additional loss on boom
+    
+    # Outcomes and their respective weights
+    OUTCOMES = ["success", "fail", "boom"]
+    WEIGHTS = [0.60, 0.35, 0.05] # 60% success, 35% fail, 5% boom
+
+    user_id = str(message.author.id)
+    user_ref = db.collection('user_gem_counts').document(user_id)
+
+    try:
+        # --- Transaction to handle the entire gamble ---
+        @firestore.transactional
+        def starforce_transaction(transaction, user_ref):
+            snapshot = user_ref.get(transaction=transaction)
+            current_gems = snapshot.to_dict().get('gem_count', 0) if snapshot.exists else 0
+            
+            if current_gems < COST:
+                return "not_enough_gems", None, current_gems
+
+            # --- Determine Outcome ---
+            chosen_outcome = random.choices(OUTCOMES, weights=WEIGHTS, k=1)[0]
+            
+            gem_change = 0
+            if chosen_outcome == "success":
+                gem_change = SUCCESS_PAYOUT - COST # Net gain
+            elif chosen_outcome == "fail":
+                gem_change = -COST
+            elif chosen_outcome == "boom":
+                gem_change = -COST - BOOM_PENALTY
+
+            # If a loss would make the balance negative, just take all gems.
+            if current_gems + gem_change < 0:
+                gem_change = -current_gems
+            
+            transaction.update(user_ref, {'gem_count': firestore.Increment(gem_change)})
+            return chosen_outcome, gem_change, current_gems
+
+        # Execute the transaction
+        transaction_result, gem_change, current_gems = starforce_transaction(db.transaction(), user_ref)
+
+        if transaction_result == "not_enough_gems":
+            await message.channel.send(f"{message.author.display_name}, you need {COST} gems to attempt star forcing. You currently have {current_gems} gems.")
+            return
+
+        await message.channel.send(f"{message.author.display_name} attempts to star force their equipment for {COST} gems...")
+        await asyncio.sleep(2) # Dramatic pause
+
+        new_gem_balance = current_gems + gem_change
+
+        if transaction_result == "success":
+            response = f"**SUCCESS!** {config.EMOJI_STAR} Your equipment has been enhanced! You won **{gem_change}** gems."
+        elif transaction_result == "fail":
+            response = f"**FAIL!** The enhancement failed. You lost **{-gem_change}** gems."
+        elif transaction_result == "boom":
+            response = f"**BOOM!** {config.EMOJI_SPARKLE} Your item was destroyed! You lost **{-gem_change}** gems. Ouch."
+        
+        response += f"\nYour new balance is {new_gem_balance} gems."
+        
+        embed = discord.Embed(description=response, colour=discord.Colour.purple())
+        await message.channel.send(embed=embed)
+
+    except Exception as e:
+        logging.error(f"Error during starforce for user {user_id}: {e}")
+        await message.channel.send("An error occurred while trying to star force.")
+
 command_handlers = {
     'ursus': handle_ursus,  # Consider using a more descriptive name, like 'handle_ursus_command'
     'servertime': handle_servertime,  # Same here
@@ -1021,4 +1095,5 @@ command_handlers = {
     'buy': handle_buy,
     'inventory': handle_inventory,  # Consider making this a property of a user class
     'use': handle_use,
+    'sf': handle_starforce,
 }
