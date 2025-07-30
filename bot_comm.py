@@ -430,7 +430,7 @@ async def handle_mine(message, db):
     
     @firestore.transactional
     def mine_transaction(transaction, user_ref):
-        snapshot = transaction.get(user_ref)
+        snapshot = user_ref.get(transaction=transaction)
         if not snapshot.exists:
             return "no_inventory", None
 
@@ -453,7 +453,7 @@ async def handle_mine(message, db):
                 return "cooldown", time_left
 
         # Mining logic
-        gems_found = random.randint(1, 3)
+        gems_found = random.randint(1, 5)
         acquisition_multiplier = get_acquisition_multiplier(inventory)
         final_gems_found = math.ceil(gems_found * acquisition_multiplier)
 
