@@ -292,6 +292,13 @@ shop_items = {
         "type": "passive",
         "effect": {}
     },
+    "pickaxe": {
+        "name": "Sturdy Pickaxe",
+        "description": "Allows you to use the `~mine` command to find gems. A must-have for any serious gem collector.",
+        "cost": 500,
+        "type": "passive",
+        "effect": {}
+    },
     "suspicious_bag": {
         "name": "Suspicious-Looking Bag",
         "description": "What's inside? Could be gems, could be nothing, or it could be a curse that makes the bot mock you for an hour. High risk, high reward!",

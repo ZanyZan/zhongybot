@@ -131,6 +131,7 @@ async def handle_help(message):
     **Gem & Economy Commands**
     `~daily` - Claim your daily gems.
     `~checkgems` - Check your current gem balance.
+    `~mine` - Use your pickaxe to find gems.
     `~leaderboard` - Shows the top gem holders.
     `~shop` - Displays the gem shop.
     `~buy <item_id>` - Buys an item from the shop.
@@ -417,6 +418,78 @@ async def handle_takegems(message, db):
     except Exception as e:
         logging.exception(f"Error taking gems:")  # Use logging.exception
         await message.channel.send("An error occurred while trying to take gems.")
+
+async def handle_mine(message, db):
+    """Handles the ~mine command for users with a pickaxe using a transaction."""
+    if db is None:
+        await message.channel.send("Firebase is not initialized. Cannot use this command.")
+        return
+
+    user_id = str(message.author.id)
+    user_ref = db.collection('user_gem_counts').document(user_id)
+    
+    @firestore.transactional
+    def mine_transaction(transaction, user_ref):
+        snapshot = transaction.get(user_ref)
+        if not snapshot.exists:
+            return "no_inventory", None
+
+        user_data = snapshot.to_dict()
+        inventory = user_data.get('inventory', {})
+
+        if 'pickaxe' not in inventory:
+            return "no_pickaxe", None
+
+        # Cooldown check
+        last_mine_time = user_data.get('last_mine_time')
+        current_time_utc = datetime.now(timezone.utc)
+
+        if last_mine_time:
+            # last_mine_time is a datetime object from Firestore.
+            time_since_last_mine = current_time_utc - last_mine_time
+            cooldown_seconds = config.MINE_COOLDOWN_SECONDS
+            if time_since_last_mine.total_seconds() < cooldown_seconds:
+                time_left = timedelta(seconds=cooldown_seconds) - time_since_last_mine
+                return "cooldown", time_left
+
+        # Mining logic
+        gems_found = random.randint(1, 3)
+        acquisition_multiplier = get_acquisition_multiplier(inventory)
+        final_gems_found = math.ceil(gems_found * acquisition_multiplier)
+
+        # Update database within the transaction
+        transaction.update(user_ref, {
+            'gem_count': firestore.Increment(final_gems_found),
+            'last_mine_time': firestore.SERVER_TIMESTAMP
+        })
+
+        return "success", (gems_found, final_gems_found, acquisition_multiplier)
+
+    try:
+        transaction = db.transaction()
+        result, data = mine_transaction(transaction, user_ref)
+
+        if result == "no_inventory":
+            await message.channel.send("You don't have any items. You need to buy a pickaxe from the `~shop` to mine for gems!")
+        elif result == "no_pickaxe":
+            await message.channel.send("You need a pickaxe to mine for gems! You can buy one from the `~shop`.")
+        elif result == "cooldown":
+            time_left = data
+            minutes, seconds = divmod(time_left.total_seconds(), 60)
+            await message.channel.send(f"You're tired from your last mining session. Please wait another {int(minutes)} minute(s) and {int(seconds)} second(s).")
+        elif result == "success":
+            gems_found, final_gems_found, acquisition_multiplier = data
+            response_message = f"{message.author.display_name}, you swing your pickaxe and find **{gems_found}** gem(s)! {config.EMOJI_GEM}"
+            if acquisition_multiplier > 1.0:
+                bonus_gems = final_gems_found - gems_found
+                response_message += f"\nYour Gem Acquisition Booster grants you an extra **{bonus_gems}** gem(s), for a total of **{final_gems_found}**!"
+            
+            await message.channel.send(response_message)
+            logging.info(f"User {message.author.display_name} ({user_id}) mined {final_gems_found} gems.")
+
+    except Exception as e:
+        logging.error(f"Error during mining for user {user_id}: {e}")
+        await message.channel.send("An error occurred while trying to mine.")
 
 # Define payout structure
 payouts = {
@@ -840,6 +913,10 @@ async def handle_use(message, db):
         await message.channel.send(f"Item with ID `{item_id_to_use}` is not a usable item.")
         return
 
+    if item_id_to_use == "rigged_ticket":
+        await message.channel.send(f"The **{item_details['name']}** is used automatically on your next `~slots` roll. You don't need to use it manually!")
+        return
+
     user_id = str(message.author.id)
     user_doc_ref = db.collection('user_gem_counts').document(user_id)
 
@@ -883,13 +960,13 @@ async def handle_use(message, db):
                 chosen_outcome = random.choices(outcomes, weights=weights, k=1)[0]
 
                 if chosen_outcome == "win_gems":
-                    gems_won = random.randint(25, 100)
+                    gems_won = random.randint(50, 100)
                     user_doc_ref.update({'gem_count': firestore.Increment(gems_won)})
                     await message.channel.send(f"Jackpot! You found **{gems_won}** gems inside! {config.EMOJI_GEM}")
                 elif chosen_outcome == "lose_gems":
                     gems_lost = random.randint(5, 25)
                     user_doc_ref.update({'gem_count': firestore.Increment(-gems_lost)})
-                    await message.channel.send(f"Oh no! The bag had a hole... you lost **{gems_lost}** gems. {config.EMOJI_GEM}")
+                    await message.channel.send(f"Oh no! The bag contained a gem eating dragon... The dragon ate **{gems_lost}** gems. {config.EMOJI_GEM}")
                 elif chosen_outcome == "nothing":
                     await message.channel.send("You open the bag... it's full of dust. You got nothing.")
                 elif chosen_outcome == "curse":
@@ -1096,4 +1173,5 @@ command_handlers = {
     'inventory': handle_inventory,  # Consider making this a property of a user class
     'use': handle_use,
     'sf': handle_starforce,
+    'mine': handle_mine,
 }
