@@ -219,7 +219,7 @@ async def handle_weaponf(message):
 
 
 async def handle_ask(message, db, model, max_history_length, discord_max_length):
-    if message.channel.id == config.BOT_SPAM_CHANNEL_ID:
+    if message.channel.id not in config.BOT_SPAM_CHANNEL_ID:
         if db is None:
             await message.channel.send("Firebase is not initialized. Cannot use the ~ask command.")
             return
@@ -261,7 +261,7 @@ async def handle_ask(message, db, model, max_history_length, discord_max_length)
 
 
 async def handle_deletehistory(message, db):
-    if message.channel.id == config.BOT_SPAM_CHANNEL_ID:
+    if message.channel.id not in config.BOT_SPAM_CHANNEL_ID:
         if db is None:
             await message.channel.send("Firebase is not initialized. Cannot delete history.")
             return
