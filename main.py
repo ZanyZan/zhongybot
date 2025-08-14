@@ -200,19 +200,10 @@ async def handle_passive_responses(message):
         await message.reply(response)
         return
 
-    # User-specific triggers
-    if message.author.id == config.UBER_USER_ID:
-        roll = random.randint(1, 100)
-        logging.info(f"Ub3r rolled {roll}")
-        if roll <= 7:
-            text = message.content.lower()
-            response = capi_sentence(text)
-            await message.reply(response, mention_author=False)
-            return
-    elif message.author.id == config.HARRI_USER_ID:
+    if message.author.id == config.HARRI_USER_ID:
         roll = random.randint(1, 1000)
         logging.info(f"Harri rolled {roll}")
-        if roll <= 8:
+        if roll <= 3:  # 0.3% chance for a special response
             roll = random.randint(1, 4)
             if roll <= 3:
                 text = message.content.lower()
@@ -386,4 +377,5 @@ async def on_reaction_add(reaction, user):
 
         else:
             logging.info(f"User {user.display_name} has already claimed gem {message_id}.")
+
 client.run(config.DISCORD_TOKEN)
