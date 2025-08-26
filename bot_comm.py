@@ -9,6 +9,18 @@ from helper import EIGHT_BALL_ANSWERS, calculate_time, get_acquisition_multiplie
 import math
 import logging
 import asyncio
+
+# --- Upgrade Constants ---
+PICKAXE_UPGRADE_COSTS = {
+    1: 750,   # To level 2
+    2: 1200,  # To level 3
+    3: 2000,  # To level 4
+    4: 5000,  # To level 5
+}
+MAX_PICKAXE_LEVEL = 5
+PICKAXE_LEVEL_REWARDS = {
+    1: (1, 5), 2: (3, 7), 3: (5, 10), 4: (7, 15), 5: (10, 20),
+}
 # Define functions for each command
 async def handle_ursus(message, my_time):
     """
@@ -137,6 +149,7 @@ async def handle_help(message):
     `~buy <item_id>` - Buys an item from the shop.
     `~inventory` - Shows your purchased items.
     `~slots [rolls]` - Play the slot machine (e.g., `~slots 5`).
+    `~upgrade` - Upgrade your pickaxe to find more gems.
     `~slotspayouts` - Shows the slot machine payouts and odds.
 
     **Fun & AI Commands**
@@ -436,9 +449,17 @@ async def handle_mine(message, db):
 
         user_data = snapshot.to_dict()
         inventory = user_data.get('inventory', {})
+        pickaxe_data = inventory.get('pickaxe')
 
-        if 'pickaxe' not in inventory:
+        if not pickaxe_data:
             return "no_pickaxe", None
+
+        # Check if pickaxe needs to be migrated to the new level system
+        needs_inventory_update = False
+        if 'level' not in pickaxe_data:
+            pickaxe_data['level'] = 1
+            inventory['pickaxe'] = pickaxe_data
+            needs_inventory_update = True
 
         # Cooldown check
         last_mine_time = user_data.get('last_mine_time')
@@ -453,15 +474,21 @@ async def handle_mine(message, db):
                 return "cooldown", time_left
 
         # Mining logic
-        gems_found = random.randint(1, 5)
+        pickaxe_level = pickaxe_data.get('level', 1) # Now guaranteed to exist
+        min_gems, max_gems = PICKAXE_LEVEL_REWARDS.get(pickaxe_level, PICKAXE_LEVEL_REWARDS[1])
+        gems_found = random.randint(min_gems, max_gems)
         acquisition_multiplier = get_acquisition_multiplier(inventory)
         final_gems_found = math.ceil(gems_found * acquisition_multiplier)
 
         # Update database within the transaction
-        transaction.update(user_ref, {
+        update_data = {
             'gem_count': firestore.Increment(final_gems_found),
             'last_mine_time': firestore.SERVER_TIMESTAMP
-        })
+        }
+        if needs_inventory_update:
+            update_data['inventory'] = inventory
+        
+        transaction.update(user_ref, update_data)
 
         return "success", (gems_found, final_gems_found, acquisition_multiplier)
 
@@ -490,6 +517,67 @@ async def handle_mine(message, db):
     except Exception as e:
         logging.error(f"Error during mining for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to mine.")
+
+async def handle_upgrade(message, db):
+    """Handles upgrading the user's pickaxe."""
+    if db is None:
+        await message.channel.send("Firebase is not initialized. Cannot use this command.")
+        return
+
+    user_id = str(message.author.id)
+    user_ref = db.collection('user_gem_counts').document(user_id)
+
+    @firestore.transactional
+    def upgrade_transaction(transaction, user_ref):
+        snapshot = user_ref.get(transaction=transaction)
+        if not snapshot.exists:
+            return "no_inventory", None
+
+        user_data = snapshot.to_dict()
+        inventory = user_data.get('inventory', {})
+        pickaxe_data = inventory.get('pickaxe')
+
+        if not pickaxe_data:
+            return "no_pickaxe", None
+
+        current_level = pickaxe_data.get('level', 1)
+        if current_level >= MAX_PICKAXE_LEVEL:
+            return "max_level", None
+
+        upgrade_cost = PICKAXE_UPGRADE_COSTS.get(current_level)
+        current_gems = user_data.get('gem_count', 0)
+
+        if current_gems < upgrade_cost:
+            return "not_enough_gems", upgrade_cost
+
+        # Deduct cost and upgrade pickaxe
+        inventory['pickaxe']['level'] = current_level + 1
+        
+        transaction.update(user_ref, {
+            'gem_count': firestore.Increment(-upgrade_cost),
+            'inventory': inventory
+        })
+
+        return "success", (current_level + 1, upgrade_cost)
+
+    try:
+        result, data = upgrade_transaction(db.transaction(), user_ref)
+
+        if result == "no_inventory" or result == "no_pickaxe":
+            await message.channel.send("You don't have a pickaxe to upgrade. Buy one from the `~shop` first!")
+        elif result == "max_level":
+            await message.channel.send(f"Your pickaxe is already at the maximum level ({MAX_PICKAXE_LEVEL})!")
+        elif result == "not_enough_gems":
+            cost = data
+            await message.channel.send(f"You need {cost} gems to upgrade your pickaxe to the next level.")
+        elif result == "success":
+            new_level, cost = data
+            await message.channel.send(f"Congratulations! You spent {cost} gems and upgraded your pickaxe to **Level {new_level}**!")
+            logging.info(f"User {message.author.display_name} ({user_id}) upgraded pickaxe to level {new_level}.")
+
+    except Exception as e:
+        logging.error(f"Error during pickaxe upgrade for user {user_id}: {e}")
+        await message.channel.send("An error occurred while trying to upgrade your pickaxe.")
 
 # Define payout structure
 payouts = {
@@ -812,22 +900,18 @@ async def handle_buy(message, db):
         @firestore.transactional
         def buy_item_transaction(transaction, user_ref, item_id, item_details, user_display_name):
             snapshot = user_ref.get(transaction=transaction)
-            user_data = snapshot.to_dict() if snapshot.exists else None
+            user_data = snapshot.to_dict() if snapshot.exists else {}
 
-            if user_data is None:
+            # Ensure user document has basic structure
+            if not snapshot.exists:
                 # Create initial user data if document doesn't exist
                 user_data = {'username': user_display_name, 'gem_count': 0, 'inventory': {}}
-                transaction.set(user_ref, user_data)
-            elif 'inventory' not in user_data:
-                # Add inventory field if missing
-                user_data['inventory'] = {}
-                transaction.update(user_ref, {'inventory': user_data['inventory']})
 
             current_gems = user_data.get('gem_count', 0)
-            inventory = user_data.get('inventory', {}) # Use .get with a default value
+            inventory = user_data.get('inventory', {})
 
             # Check if the user already owns the unique item
-            if item_details.get("type") != "consumable" and inventory.get(item_id, {}).get('quantity', 0) > 0:
+            if item_details.get("type") != "consumable" and item_id in inventory:
                  return "already_owned"
 
             item_cost = item_details['cost']
@@ -835,13 +919,18 @@ async def handle_buy(message, db):
                 return "not_enough_gems"
 
             new_gems = current_gems - item_cost
-            current_quantity = inventory.get(item_id, {}).get('quantity', 0) # Use .get with a default value
-            item_effect = item_details.get('effect', {})
-            inventory[item_id] = {'quantity': current_quantity + 1, 'effect': item_effect}
-            user_data['inventory'] = inventory # Update inventory in user_data
+            
+            # Update inventory
+            if item_id in inventory:
+                inventory[item_id]['quantity'] += 1
+            else:
+                inventory[item_id] = {'quantity': 1, 'effect': item_details.get('effect', {})}
+                # Special handling for pickaxe to add level on first purchase
+                if item_id == 'pickaxe':
+                    inventory[item_id]['level'] = 1
 
             # Update the document with new gem count and inventory
-            transaction.update(user_ref, {'gem_count': new_gems, 'inventory': user_data['inventory']})
+            transaction.set(user_ref, {'username': user_display_name, 'gem_count': new_gems, 'inventory': inventory}, merge=True)
 
             return {"status": "success", "new_gems": new_gems}
         
@@ -854,9 +943,11 @@ async def handle_buy(message, db):
             await message.channel.send(f"You don't have enough gems to buy **{item_to_buy['name']}**. You need {item_to_buy['cost']} gem(s).")
         elif transaction_result == "already_owned":
              await message.channel.send(f"You already own **{item_to_buy['name']}**. You can only have one of this item.")
-        elif transaction_result.get("status") == "success":
+        elif isinstance(transaction_result, dict) and transaction_result.get("status") == "success":
             new_gems = transaction_result["new_gems"]
             await message.channel.send(f"Successfully purchased **{item_to_buy['name']}** for {item_to_buy['cost']} gem(s). Your new gem balance is {new_gems}.")
+        else:
+            await message.channel.send("An unexpected error occurred during your purchase.")
 
 
     except Exception as e:
@@ -1173,5 +1264,6 @@ command_handlers = {
     'inventory': handle_inventory,  # Consider making this a property of a user class
     'use': handle_use,
     'sf': handle_starforce,
+    'upgrade': handle_upgrade,
     'mine': handle_mine,
 }
