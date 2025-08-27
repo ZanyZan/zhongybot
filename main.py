@@ -168,13 +168,16 @@ async def handle_command(message):
         kwargs = {}
         if command in ['ask']:
             kwargs = {'db': db, 'model': model, 'max_history_length': config.MAX_HISTORY_LENGTH, 'discord_max_length': config.DISCORD_MAX_LENGTH}
-        elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'sf', 'use', 'inventory', 'daily', 'leaderboard', 'mine', 'upgrade']:
+        elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'sf', 'use', 'inventory', 'daily', 'leaderboard', 'mine', 'upgrade', 'payoutpoll']:
             kwargs = {'db': db}
         elif command in ['ursus', 'servertime', 'time']:
             kwargs = {'my_time': my_time}
         elif command in ['wipegems']:
             kwargs = {'db': db, 'target_role_id': config.MEMBER_ROLE_ID}
         
+        if command == 'payoutpoll':
+            kwargs['client'] = client
+
         await handler(message, **kwargs)
 
     # Special case for admin-only commands not in the main handler dict

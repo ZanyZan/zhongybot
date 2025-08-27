@@ -6,6 +6,7 @@ import weapons as wp
 from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
 from helper import EIGHT_BALL_ANSWERS, calculate_time, get_acquisition_multiplier, shop_items, split_response
+import re
 import math
 import logging
 import asyncio
@@ -163,6 +164,7 @@ async def handle_help(message):
     `~takegems @user <amount>`
     `~spawngem`
     `~wipegems`
+    `~payoutpoll <message_id_or_url> <amount> [option_number]`
 
     Any issues or ideas for new commands? Please let Zany know!
     """
@@ -1239,12 +1241,184 @@ async def handle_starforce(message, db):
         logging.error(f"Error during starforce for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to star force.")
 
+async def handle_payoutpoll(message, db, client):
+    """Handles paying out gems to users who voted on a winning poll option."""
+    if message.author.id not in config.ADMIN_USER_IDS:
+        await message.channel.send("You are not authorized to use this command.")
+        return
+
+    if db is None:
+        await message.channel.send("Firebase is not initialized. Cannot use this command.")
+        return
+
+    args = message.content.split()
+    if len(args) < 3:
+        await message.channel.send("Usage: `~payoutpoll <message_id_or_url> <amount> [option_number]`")
+        return
+
+    message_arg = args[1]
+    try:
+        amount = int(args[2])
+        if amount <= 0:
+            await message.channel.send("Please provide a positive amount of gems.")
+            return
+    except ValueError:
+        await message.channel.send("Invalid amount specified. Please provide a number.")
+        return
+
+    winning_option_index = None
+    if len(args) > 3:
+        try:
+            # User provides 1-based index, we convert to 0-based
+            winning_option_index = int(args[3]) - 1
+            if winning_option_index < 0:
+                await message.channel.send("Option number must be 1 or greater.")
+                return
+        except ValueError:
+            await message.channel.send("Invalid option number. Please provide a number.")
+            return
+
+    try:
+        # Logic from discord.py's PartialMessageConverter
+        id_regex = re.compile(r'(?:(?P<channel_id>[0-9]{15,20})-)?(?P<message_id>[0-9]{15,20})$')
+        link_regex = re.compile(
+            r'https?://(?:(ptb|canary|www)\.)?discord(?:app)?\.com/channels/'
+            r'(?P<guild_id>[0-9]{15,20}|@me)'
+            r'/(?P<channel_id>[0-9]{15,20})/(?P<message_id>[0-9]{15,20})/?$'
+        )
+        match = id_regex.match(message_arg) or link_regex.match(message_arg)
+        if not match:
+            await message.channel.send(f"Invalid message ID or URL format: `{message_arg}`")
+            return
+        
+        data = match.groupdict()
+        channel_id = discord.utils._get_as_snowflake(data, 'channel_id') or message.channel.id
+        message_id = int(data['message_id'])
+        
+        target_channel = client.get_channel(channel_id)
+        if not target_channel or not isinstance(target_channel, discord.abc.Messageable):
+            await message.channel.send(f"Could not find the channel.")
+            return
+
+        poll_message = await target_channel.fetch_message(message_id)
+
+    except discord.NotFound:
+        await message.channel.send("The message or channel could not be found.")
+        return
+    except discord.Forbidden:
+        await message.channel.send("I don't have permissions to read that message or channel.")
+        return
+    except Exception as e:
+        logging.error(f"Error fetching poll message: {e}")
+        await message.channel.send("An error occurred while fetching the poll message.")
+        return
+
+    if not poll_message.poll:
+        await message.channel.send("The specified message does not contain a poll.")
+        return
+
+    # Find winning answer(s)
+    winning_answers = []
+    if winning_option_index is not None:
+        if winning_option_index >= len(poll_message.poll.answers):
+            await message.channel.send(f"Invalid option number. This poll only has {len(poll_message.poll.answers)} options (1 to {len(poll_message.poll.answers)}).")
+            return
+        winning_answers.append(poll_message.poll.answers[winning_option_index])
+    else:
+        # Automatic winner detection based on votes
+        if not poll_message.poll.results:
+            await message.channel.send("The poll results are not available. The poll might need to be closed first. Alternatively, specify the winning option number.")
+            return
+
+        max_votes = -1
+        for answer in poll_message.poll.answers:
+            answer_result = discord.utils.get(poll_message.poll.results.answer_counts, id=answer.id)
+            if not answer_result:
+                continue
+            
+            vote_count = answer_result.count
+            if vote_count > max_votes:
+                max_votes = vote_count
+                winning_answers = [answer]
+            elif vote_count == max_votes:
+                winning_answers.append(answer)
+
+        if max_votes <= 0:
+            await message.channel.send("The poll has no votes. No one will be paid out.")
+            return
+
+    if not winning_answers:
+        await message.channel.send("Could not determine a winning answer. Please specify one or ensure the poll has votes.")
+        return
+        
+    # Get all voters for winning answers
+    winning_voters = set()
+    for answer in winning_answers:
+        try:
+            after_id = None
+            while True:
+                voter_data = await client.http.get_poll_answer_voters(
+                    poll_message.channel.id, 
+                    poll_message.id, 
+                    answer.id,
+                    limit=100,
+                    after=after_id
+                )
+                
+                users_on_page = [discord.User(state=client._connection, data=u) for u in voter_data['users']]
+                if not users_on_page:
+                    break
+                
+                for user in users_on_page:
+                    winning_voters.add(user)
+                
+                after_id = users_on_page[-1].id
+
+        except discord.HTTPException as e:
+            logging.error(f"Failed to get voters for answer {answer.id}: {e}")
+            await message.channel.send(f"An error occurred while fetching voters. Payout aborted.")
+            return
+
+    if not winning_voters:
+        await message.channel.send("Found winning option(s), but could not fetch any voters. No one will be paid out.")
+        return
+
+    # Award gems
+    batch = db.batch()
+    user_gem_counts_ref = db.collection('user_gem_counts')
+    for user in winning_voters:
+        user_ref = user_gem_counts_ref.document(str(user.id))
+        batch.set(user_ref, {
+            'username': user.display_name,
+            'gem_count': firestore.Increment(amount)
+        }, merge=True)
+
+    try:
+        batch.commit()
+        
+        winner_mentions = [user.mention for user in winning_voters]
+        winning_answer_text = " / ".join([f"'{a.text}'" for a in winning_answers])
+        
+        response_start = (f"Successfully paid out **{amount}** {config.EMOJI_GEM} to **{len(winning_voters)}** voters "
+                          f"for the winning poll option(s): {winning_answer_text}.\n\nWinners:\n")
+        
+        response_chunks = split_response(response_start + ", ".join(winner_mentions), 2000)
+        
+        for chunk in response_chunks:
+            await message.channel.send(chunk)
+            
+        logging.info(f"Paid out {amount} gems to {len(winning_voters)} users for poll {poll_message.id}.")
+
+    except Exception as e:
+        logging.error(f"Error committing gem payouts to Firebase: {e}")
+        await message.channel.send("An error occurred while trying to pay out gems.")
+
 command_handlers = {
-    'ursus': handle_ursus,  # Consider using a more descriptive name, like 'handle_ursus_command'
-    'servertime': handle_servertime,  # Same here
-    'time': handle_time,  # And so on...
-    'esfera': handle_esfera,  # Add docstrings to each function explaining its purpose
-    'help': handle_help,  # This improves readability and maintainability
+    'ursus': handle_ursus,
+    'servertime': handle_servertime, 
+    'time': handle_time,
+    'esfera': handle_esfera,
+    'help': handle_help,
     'roll': handle_roll,
     '8ball': handle_8ball,
     'weaponf': handle_weaponf,
@@ -1261,9 +1435,10 @@ command_handlers = {
     'wipegems': handle_wipegems,
     'shop': handle_shop,
     'buy': handle_buy,
-    'inventory': handle_inventory,  # Consider making this a property of a user class
+    'inventory': handle_inventory,
     'use': handle_use,
     'sf': handle_starforce,
     'upgrade': handle_upgrade,
     'mine': handle_mine,
+    'payoutpoll': handle_payoutpoll,
 }
