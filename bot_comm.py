@@ -3,25 +3,18 @@ import config
 from datetime import datetime, timedelta, timezone
 import random
 import weapons as wp
+from db_manager import get_db, reinitialize_db
 from firebase_admin import firestore
 from google.cloud.firestore_v1.field_path import FieldPath
-from helper import EIGHT_BALL_ANSWERS, calculate_time, get_acquisition_multiplier, shop_items, split_response
+from helper import (EIGHT_BALL_ANSWERS, calculate_time, get_acquisition_multiplier, 
+                    shop_items, split_response, perform_upgrade_transaction,
+                    PICKAXE_UPGRADE_COSTS, MAX_PICKAXE_LEVEL, PICKAXE_LEVEL_REWARDS)
 import re
+from google.api_core import exceptions as google_exceptions
 import math
 import logging
 import asyncio
 
-# --- Upgrade Constants ---
-PICKAXE_UPGRADE_COSTS = {
-    1: 750,   # To level 2
-    2: 1200,  # To level 3
-    3: 2000,  # To level 4
-    4: 5000,  # To level 5
-}
-MAX_PICKAXE_LEVEL = 5
-PICKAXE_LEVEL_REWARDS = {
-    1: (1, 5), 2: (3, 7), 3: (5, 10), 4: (7, 15), 5: (10, 20),
-}
 # Define functions for each command
 async def handle_ursus(message, my_time):
     """
@@ -60,9 +53,10 @@ async def handle_ursus(message, my_time):
 
 
 
-async def handle_checkgems(message, db):
+async def handle_checkgems(message):
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot check gem count.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     user_id = str(message.author.id)
@@ -79,6 +73,10 @@ async def handle_checkgems(message, db):
         embed = discord.Embed(description=response, colour=discord.Colour.purple())
         await message.channel.send(embed=embed)
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error retrieving gem count from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve your gem count.")
@@ -150,7 +148,7 @@ async def handle_help(message):
     `~buy <item_id>` - Buys an item from the shop.
     `~inventory` - Shows your purchased items.
     `~slots [rolls]` - Play the slot machine (e.g., `~slots 5`).
-    `~upgrade` - Upgrade your pickaxe to find more gems.
+    `~upgrade [confirm]` - Shows pickaxe upgrade costs and benefits. Use `confirm` to perform the upgrade.
     `~slotspayouts` - Shows the slot machine payouts and odds.
 
     **Fun & AI Commands**
@@ -233,10 +231,11 @@ async def handle_weaponf(message):
     await message.channel.send(embed=embed)
 
 
-async def handle_ask(message, db, model, max_history_length, discord_max_length):
+async def handle_ask(message, model, max_history_length, discord_max_length):
     if message.channel.id in config.BOT_SPAM_CHANNEL_ID:
+        db = get_db()
         if db is None:
-            await message.channel.send("Firebase is not initialized. Cannot use the ~ask command.")
+            await message.channel.send("Database connection is not available. Please try again later.")
             return
 
         prompt = message.content[len('ask '):].strip()
@@ -268,6 +267,10 @@ async def handle_ask(message, db, model, max_history_length, discord_max_length)
             for chunk in response_chunks:
                 await message.channel.send(chunk)
 
+        except google_exceptions.Unavailable:
+            logging.warning("Firestore unavailable, telling user to try again.")
+            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+            reinitialize_db()
         except Exception as e:
             logging.exception(f"An error occurred during LLM interaction:")  # Use logging.exception
             await message.channel.send("Sorry, I couldn't process your request at this time.")
@@ -275,10 +278,11 @@ async def handle_ask(message, db, model, max_history_length, discord_max_length)
         await message.channel.send("That command is restricted to #debris-botspam.")
 
 
-async def handle_deletehistory(message, db):
+async def handle_deletehistory(message):
     if message.channel.id not in config.BOT_SPAM_CHANNEL_ID:
+        db = get_db()
         if db is None:
-            await message.channel.send("Firebase is not initialized. Cannot delete history.")
+            await message.channel.send("Database connection is not available. Please try again later.")
             return
 
         channel_id = str(message.channel.id)
@@ -292,6 +296,10 @@ async def handle_deletehistory(message, db):
                 await message.channel.send(f"Conversation history for {message.author.display_name} in this channel has been deleted.")
             else:
                 await message.channel.send(f"No conversation history found for {message.author.display_name} in this channel.")
+        except google_exceptions.Unavailable:
+            logging.warning("Firestore unavailable, telling user to try again.")
+            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+            reinitialize_db()
         except Exception as e:
             logging.exception(f"Error deleting history from Firebase:")  # Use logging.exception
             await message.channel.send("An error occurred while trying to delete your history.")
@@ -318,13 +326,14 @@ async def handle_forward(message, client):
             await message.channel.send("An error occurred while trying to forward your message.")
 
 
-async def handle_givegems(message, db):	
+async def handle_givegems(message):
     if message.author.id not in config.ADMIN_USER_IDS:
         await message.channel.send("You are not authorized to use this command.")
         return
 
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot use the ~givegems command.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     # Check if the message has mentions and arguments
@@ -357,16 +366,21 @@ async def handle_givegems(message, db):
         await message.channel.send(f"Successfully gave {amount} gem(s) to {target_user.display_name}.")
         logging.info(f"Gave {amount} gem(s) to user ID:{target_user.id}")
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.exception(f"Error giving gems:")  # Use logging.exception
         await message.channel.send("An error occurred while trying to give gems.")
 
-async def handle_takegems(message, db):
+async def handle_takegems(message):
     # Check if the message author is authorized
     if message.author.id not in config.ADMIN_USER_IDS:
         await message.channel.send("You are not authorized to use this command.")
         return
 
+    db = get_db()
     if db is None:
         await message.channel.send("Firebase is not initialized. Cannot use the ~takegems command.")
         return
@@ -430,14 +444,19 @@ async def handle_takegems(message, db):
         else:
             await message.channel.send(f"Could not find {target_user.display_name}'s gem count in the database.")
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.exception(f"Error taking gems:")  # Use logging.exception
         await message.channel.send("An error occurred while trying to take gems.")
 
-async def handle_mine(message, db):
+async def handle_mine(message):
     """Handles the ~mine command for users with a pickaxe using a transaction."""
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot use this command.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     user_id = str(message.author.id)
@@ -479,8 +498,18 @@ async def handle_mine(message, db):
         pickaxe_level = pickaxe_data.get('level', 1) # Now guaranteed to exist
         min_gems, max_gems = PICKAXE_LEVEL_REWARDS.get(pickaxe_level, PICKAXE_LEVEL_REWARDS[1])
         gems_found = random.randint(min_gems, max_gems)
+
+        # Calculate multipliers
+        total_multiplier = 1.0
+        # Generic acquisition booster
         acquisition_multiplier = get_acquisition_multiplier(inventory)
-        final_gems_found = math.ceil(gems_found * acquisition_multiplier)
+        total_multiplier *= acquisition_multiplier
+        # Gem-finding Unicorn booster
+        if 'unicorn' in inventory:
+            unicorn_info = inventory.get('unicorn', {})
+            unicorn_multiplier = unicorn_info.get('effect', {}).get('mining_multiplier', 1.0)
+            total_multiplier *= unicorn_multiplier
+        final_gems_found = math.ceil(gems_found * total_multiplier)
 
         # Update database within the transaction
         update_data = {
@@ -492,7 +521,7 @@ async def handle_mine(message, db):
         
         transaction.update(user_ref, update_data)
 
-        return "success", (gems_found, final_gems_found, acquisition_multiplier)
+        return "success", (gems_found, final_gems_found, total_multiplier)
 
     try:
         transaction = db.transaction()
@@ -507,79 +536,105 @@ async def handle_mine(message, db):
             minutes, seconds = divmod(time_left.total_seconds(), 60)
             await message.channel.send(f"You're tired from your last mining session. Please wait another {int(minutes)} minute(s) and {int(seconds)} second(s).")
         elif result == "success":
-            gems_found, final_gems_found, acquisition_multiplier = data
-            response_message = f"{message.author.display_name}, you swing your pickaxe and find **{gems_found}** gem(s)! {config.EMOJI_GEM}"
-            if acquisition_multiplier > 1.0:
+            gems_found, final_gems_found, total_multiplier = data
+            if total_multiplier > 1.0:
                 bonus_gems = final_gems_found - gems_found
-                response_message += f"\nYour Gem Acquisition Booster grants you an extra **{bonus_gems}** gem(s), for a total of **{final_gems_found}**!"
-            
+                response_message = f"{message.author.display_name}, you swing your pickaxe and find **{final_gems_found}** gem(s) ({gems_found} base + {bonus_gems} bonus)! {config.EMOJI_GEM}"
+            else:
+                response_message = f"{message.author.display_name}, you swing your pickaxe and find **{final_gems_found}** gem(s)! {config.EMOJI_GEM}"
             await message.channel.send(response_message)
             logging.info(f"User {message.author.display_name} ({user_id}) mined {final_gems_found} gems.")
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error during mining for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to mine.")
 
-async def handle_upgrade(message, db):
-    """Handles upgrading the user's pickaxe."""
+async def handle_upgrade(message):
+    """
+    Handles viewing pickaxe upgrade information and performing the upgrade.
+    `~upgrade` shows the current level, cost, and rewards for the next level.
+    `~upgrade confirm` performs the upgrade if the user has enough gems.
+    """
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot use this command.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     user_id = str(message.author.id)
     user_ref = db.collection('user_gem_counts').document(user_id)
+    args = message.content.split()
+    is_confirm = len(args) > 1 and args[1].lower() == 'confirm'
 
-    @firestore.transactional
-    def upgrade_transaction(transaction, user_ref):
-        snapshot = user_ref.get(transaction=transaction)
-        if not snapshot.exists:
-            return "no_inventory", None
+    # --- Command handling logic ---
+    if is_confirm:
+        try:
+            result, data = perform_upgrade_transaction(db.transaction(), user_ref)
 
-        user_data = snapshot.to_dict()
-        inventory = user_data.get('inventory', {})
-        pickaxe_data = inventory.get('pickaxe')
+            if result == "no_inventory" or result == "no_pickaxe":
+                await message.channel.send("You don't have a pickaxe to upgrade. Buy one from the `~shop` first!")
+            elif result == "max_level":
+                await message.channel.send(f"Your pickaxe is already at the maximum level ({MAX_PICKAXE_LEVEL})!")
+            elif result == "not_enough_gems":
+                cost = data
+                await message.channel.send(f"You need {cost} gems to upgrade your pickaxe.")
+            elif result == "success":
+                new_level, cost = data
+                await message.channel.send(f"Congratulations! You spent {cost} gems and upgraded your pickaxe to **Level {new_level}**!")
+                logging.info(f"User {message.author.display_name} ({user_id}) upgraded pickaxe to level {new_level}.")
+        except google_exceptions.Unavailable:
+            logging.warning("Firestore unavailable, telling user to try again.")
+            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+            reinitialize_db()
+        except Exception as e:
+            logging.error(f"Error during pickaxe upgrade for user {user_id}: {e}")
+            await message.channel.send("An error occurred while trying to upgrade your pickaxe.")
+    else: # Show info
+        try:
+            doc = user_ref.get()
+            if not doc.exists:
+                await message.channel.send("You don't have a pickaxe to upgrade. Buy one from the `~shop` first!")
+                return
 
-        if not pickaxe_data:
-            return "no_pickaxe", None
+            user_data = doc.to_dict()
+            inventory = user_data.get('inventory', {})
+            pickaxe_data = inventory.get('pickaxe')
 
-        current_level = pickaxe_data.get('level', 1)
-        if current_level >= MAX_PICKAXE_LEVEL:
-            return "max_level", None
+            if not pickaxe_data:
+                await message.channel.send("You don't have a pickaxe to upgrade. Buy one from the `~shop` first!")
+                return
+            
+            current_level = pickaxe_data.get('level', 1)
+            current_reward_min, current_reward_max = PICKAXE_LEVEL_REWARDS[current_level]
 
-        upgrade_cost = PICKAXE_UPGRADE_COSTS.get(current_level)
-        current_gems = user_data.get('gem_count', 0)
+            embed = discord.Embed(title="Pickaxe Upgrade Information", colour=discord.Colour.purple())
+            embed.add_field(name="Your Current Pickaxe Level", value=f"**Level {current_level}**", inline=False)
+            embed.add_field(name="Current Mining Rewards", value=f"{current_reward_min} - {current_reward_max} gems per `~mine`", inline=False)
 
-        if current_gems < upgrade_cost:
-            return "not_enough_gems", upgrade_cost
-
-        # Deduct cost and upgrade pickaxe
-        inventory['pickaxe']['level'] = current_level + 1
-        
-        transaction.update(user_ref, {
-            'gem_count': firestore.Increment(-upgrade_cost),
-            'inventory': inventory
-        })
-
-        return "success", (current_level + 1, upgrade_cost)
-
-    try:
-        result, data = upgrade_transaction(db.transaction(), user_ref)
-
-        if result == "no_inventory" or result == "no_pickaxe":
-            await message.channel.send("You don't have a pickaxe to upgrade. Buy one from the `~shop` first!")
-        elif result == "max_level":
-            await message.channel.send(f"Your pickaxe is already at the maximum level ({MAX_PICKAXE_LEVEL})!")
-        elif result == "not_enough_gems":
-            cost = data
-            await message.channel.send(f"You need {cost} gems to upgrade your pickaxe to the next level.")
-        elif result == "success":
-            new_level, cost = data
-            await message.channel.send(f"Congratulations! You spent {cost} gems and upgraded your pickaxe to **Level {new_level}**!")
-            logging.info(f"User {message.author.display_name} ({user_id}) upgraded pickaxe to level {new_level}.")
-
-    except Exception as e:
-        logging.error(f"Error during pickaxe upgrade for user {user_id}: {e}")
-        await message.channel.send("An error occurred while trying to upgrade your pickaxe.")
+            if current_level >= MAX_PICKAXE_LEVEL:
+                embed.description = "Your pickaxe is already at the maximum level!"
+            else:
+                upgrade_cost = PICKAXE_UPGRADE_COSTS.get(current_level)
+                next_level = current_level + 1
+                next_reward_min, next_reward_max = PICKAXE_LEVEL_REWARDS[next_level]
+                
+                embed.add_field(name="\u200b", value="--- **Next Level Stats** ---", inline=False)
+                embed.add_field(name="Upgrade to Level", value=f"**Level {next_level}**", inline=True)
+                embed.add_field(name="Upgrade Cost", value=f"{upgrade_cost} {config.EMOJI_GEM}", inline=True)
+                embed.add_field(name="New Mining Rewards", value=f"{next_reward_min} - {next_reward_max} gems", inline=False)
+                embed.set_footer(text=f"To perform the upgrade, type `~upgrade confirm`")
+            
+            await message.channel.send(embed=embed)
+        except google_exceptions.Unavailable:
+            logging.warning("Firestore unavailable, telling user to try again.")
+            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+            reinitialize_db()
+        except Exception as e:
+            logging.error(f"Error during pickaxe upgrade check for user {user_id}: {e}")
+            await message.channel.send("An error occurred while checking your pickaxe status.")
 
 # Define payout structure
 payouts = {
@@ -611,10 +666,11 @@ symbols = [config.EMOJI_CHERRY, config.EMOJI_LEMON, config.EMOJI_ORANGE, config.
 weights = [0.3, 0.25, 0.2, 0.15, 0.07, 0.03] # Relative weights for each symbol
 slot_cost = 2
 num_reels = 3
-async def handle_slots(message, db):
+async def handle_slots(message):
     if message.channel.id in config.BOT_SPAM_CHANNEL_ID: # Replace with your desired channel ID
-        if db is None:  # Consider using an assertion here if db should always be initialized
-            await message.channel.send("Firebase is not initialized. Cannot use the slots command.")
+        db = get_db()
+        if db is None:
+            await message.channel.send("Database connection is not available. Please try again later.")
             return
 
         parts = message.content.split()
@@ -772,6 +828,10 @@ async def handle_slots(message, db):
                 await message.channel.send(final_message)
 
 
+        except google_exceptions.Unavailable:
+            logging.warning("Firestore unavailable, telling user to try again.")
+            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+            reinitialize_db()
         except Exception as e:
             logging.exception(f"Error playing slots:")  # Use logging.exception
             await message.channel.send("An error occurred while trying to play the slot machine.")
@@ -816,13 +876,14 @@ async def handle_slotspayouts(message):
     await message.channel.send(embed=embed)
 
     
-async def handle_wipegems(message, db, target_role_id):
+async def handle_wipegems(message, target_role_id):
     if message.author.id not in config.ADMIN_USER_IDS: # Assuming 'aui' is the admin user ID
         await message.channel.send("You are not authorized to use this command.")
         return
 
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot wipe gems.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     # Get the guild (server) the message was sent from
@@ -877,10 +938,11 @@ async def handle_shop(message):
     await message.channel.send(embed=embed)
 
 
-async def handle_buy(message, db):
+async def handle_buy(message):
     """Handles the purchase of an item from the shop."""
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot purchase items.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     args = message.content.split()
@@ -952,14 +1014,19 @@ async def handle_buy(message, db):
             await message.channel.send("An unexpected error occurred during your purchase.")
 
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error during purchase transaction for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to process your purchase.")    
         
-async def handle_inventory(message, db):
+async def handle_inventory(message):
     """Displays the user's inventory."""
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot check inventory.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     user_id = str(message.author.id)
@@ -984,14 +1051,19 @@ async def handle_inventory(message, db):
         embed = discord.Embed(title="Inventory", description=response, colour=discord.Colour.green())
         await message.channel.send(embed=embed)
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error retrieving inventory from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve your inventory.")
 
-async def handle_use(message, db):
+async def handle_use(message):
     """Handles the ~use command for consumable items."""
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot use items.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     args = message.content.split()
@@ -1067,14 +1139,19 @@ async def handle_use(message, db):
                     await message.channel.send(random.choice(curses))
             # You can add more `elif item_id_to_use == "other_item":` blocks here for other consumables.
             
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error using item for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to use the item.")
         
-async def handle_daily(message, db):
+async def handle_daily(message):
     """Handles the daily gem claim command, resetting at UTC midnight."""
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot claim daily gems.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     user_id = str(message.author.id)
@@ -1128,14 +1205,19 @@ async def handle_daily(message, db):
 
         await message.channel.send(response_message)
         logging.info(f"User {message.author.display_name} ({user_id}) claimed their daily {final_daily_reward} gems.")
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error processing daily claim for user {user_id}: {e}")
         await message.channel.send("An error occurred while processing your daily claim.")
 
-async def handle_leaderboard(message, db):
+async def handle_leaderboard(message):
     """Displays the top 10 users with the most gems."""
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot display the leaderboard.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     try:
@@ -1163,14 +1245,19 @@ async def handle_leaderboard(message, db):
         embed = discord.Embed(title=f"{config.EMOJI_DIAMOND} Gem Leaderboard {config.EMOJI_DIAMOND}", description=response, colour=discord.Colour.gold())
         await message.channel.send(embed=embed)
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error retrieving leaderboard from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve the leaderboard.")
 
-async def handle_starforce(message, db):
+async def handle_starforce(message):
     """Handles the ~starforce command for a high-risk, high-reward gamble."""
+    db = get_db()
     if db is None:
-        await message.channel.send("Firebase is not initialized. Cannot use this command.")
+        await message.channel.send("Database connection is not available. Please try again later.")
         return
 
     # --- Game Parameters ---
@@ -1237,16 +1324,21 @@ async def handle_starforce(message, db):
         embed = discord.Embed(description=response, colour=discord.Colour.purple())
         await message.channel.send(embed=embed)
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error during starforce for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to star force.")
 
-async def handle_payoutpoll(message, db, client):
+async def handle_payoutpoll(message, client):
     """Handles paying out gems to users who voted on a winning poll option."""
     if message.author.id not in config.ADMIN_USER_IDS:
         await message.channel.send("You are not authorized to use this command.")
         return
 
+    db = get_db()
     if db is None:
         await message.channel.send("Firebase is not initialized. Cannot use this command.")
         return
@@ -1409,6 +1501,10 @@ async def handle_payoutpoll(message, db, client):
             
         logging.info(f"Paid out {amount} gems to {len(winning_voters)} users for poll {poll_message.id}.")
 
+    except google_exceptions.Unavailable:
+        logging.warning("Firestore unavailable, telling user to try again.")
+        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+        reinitialize_db()
     except Exception as e:
         logging.error(f"Error committing gem payouts to Firebase: {e}")
         await message.channel.send("An error occurred while trying to pay out gems.")

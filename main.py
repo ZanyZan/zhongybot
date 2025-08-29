@@ -1,11 +1,4 @@
 import logging
-import sys
-import time
-from datetime import datetime, timezone
-import random
-import re
-import asyncio
-import math
 
 # Configure logging at the very beginning, BEFORE any other modules that might use logging are imported.
 # This is the most critical part of the fix.
@@ -16,36 +9,43 @@ logging.basicConfig(level=logging.INFO,
                         logging.StreamHandler(sys.stdout)
                     ])
 
+import sys
+import time
+from datetime import datetime, timezone
+import random
+import re
+import asyncio
+import math
+
 import config  # Now that logging is configured, we can safely import our other modules.
 import discord
 from discord.ext import tasks
 import google.generativeai as genai
 from google.cloud.firestore_v1.base_query import FieldFilter
 
+import db_manager
+import bot_comm
+
+from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_acquisition_multiplier
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
-spawned_gem_message_id = 0
-import firebase_admin
-from firebase_admin import credentials
-from firebase_admin import firestore
-from bot_comm import command_handlers
+client = discord.Client(intents=intents)
 
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_acquisition_multiplier
+spawned_gem_message_id = 0
 first_claim_timestamp = {}
 
-try:
-    cred = credentials.Certificate(config.FIREBASE_CRED_PATH)
-    firebase_admin.initialize_app(cred)
-    db = firestore.client()
-    logging.info("Firebase initialized successfully!")
-except Exception as e:
-    logging.error(f"Error initializing Firebase: {e}")
-    db = None # Set db to None if initialization fails
+db_manager.initialize_db()
 
-client = discord.Client(intents=intents)
-genai.configure(api_key=config.GEMINI_API_KEY)
-model = genai.GenerativeModel(config.GEMINI_MODEL_NAME)
+try:
+    genai.configure(api_key=config.GEMINI_API_KEY)
+    model = genai.GenerativeModel(config.GEMINI_MODEL_NAME)
+    logging.info("Gemini AI model initialized successfully.")
+except Exception as e:
+    model = None
+    logging.critical(f"Failed to initialize Gemini AI model: {e}")
+
 #get the time in epoch and transform to an int to use
 my_time = int(time.time())
 
@@ -117,6 +117,39 @@ async def manual_gem_spawn():
         except Exception as e:
             logging.error(f"Error sending gem spawn message: {e}")
 
+# --- Command Handlers Dictionary ---
+# Note: The command handlers from bot_comm.py have been updated to not require 'db' as a parameter.
+# They now get the database connection from the db_manager themselves.
+command_handlers = {
+    "checkgems": bot_comm.handle_checkgems,
+    "gems": bot_comm.handle_checkgems,
+    "ask": lambda msg: bot_comm.handle_ask(msg, model, config.MAX_HISTORY_LENGTH, config.DISCORD_MAX_LENGTH),
+    "deletehistory": bot_comm.handle_deletehistory,
+    "givegems": bot_comm.handle_givegems,
+    "takegems": bot_comm.handle_takegems,
+    "mine": bot_comm.handle_mine,
+    "upgrade": bot_comm.handle_upgrade,
+    "slots": bot_comm.handle_slots,
+    "wipegems": lambda msg: bot_comm.handle_wipegems(msg, config.MEMBER_ROLE_ID),
+    "buy": bot_comm.handle_buy,
+    "inventory": bot_comm.handle_inventory,
+    "inv": bot_comm.handle_inventory,
+    "use": bot_comm.handle_use,
+    "daily": bot_comm.handle_daily,
+    "leaderboard": bot_comm.handle_leaderboard,
+    "lb": bot_comm.handle_leaderboard,
+    "starforce": bot_comm.handle_starforce,
+    "sf": bot_comm.handle_starforce,
+    "payoutpoll": lambda msg: bot_comm.handle_payoutpoll(msg, client),
+    "help": bot_comm.handle_help,
+    "shop": bot_comm.handle_shop,
+    "8ball": bot_comm.handle_8ball,
+    "forward": lambda msg: bot_comm.handle_forward(msg, client),
+    "ursus": lambda msg: bot_comm.handle_ursus(msg, my_time),
+    "servertime": lambda msg: bot_comm.handle_servertime(msg, my_time),
+    "time": lambda msg: bot_comm.handle_time(msg, my_time),
+}
+
 @client.event
 async def on_ready():
   """
@@ -124,8 +157,7 @@ async def on_ready():
   """
   update_my_time.start()
   client.loop.create_task(start_gem_spawning())  # Start the gem spawn task
-
-  logging.info("logged in as {0.user}".format(client))
+  logging.info(f"Logged in as {client.user}")
 
 
 async def start_gem_spawning():
@@ -143,49 +175,6 @@ async def start_gem_spawning():
     spawn_gem.change_interval(seconds=random.randint(config.MIN_GEM_SPAWN_INTERVAL, config.MAX_GEM_SPAWN_INTERVAL))
     spawn_gem.start()
     logging.info("Gem spawn loop started.")
-
-async def handle_command(message):
-    """
-    Processes a message that is identified as a command.
-    Handles messages starting with '~' in servers and all messages in DMs.
-    """
-    # Handle DMs, which are always treated as potential commands
-    if isinstance(message.channel, discord.DMChannel):
-        if message.content.lower().startswith('~forward'):
-            handler = command_handlers.get('forward')
-            if handler:
-                await handler(message, client=client)
-        else:
-            await message.channel.send("To forward a message to the server, please start your message with `~forward` followed by the message you want to send.")
-        return
-
-    # Handle server commands
-    command = message.content[1:].lower().split()[0]
-    handler = command_handlers.get(command)
-
-    if handler:
-        # This structure simplifies passing arguments to handlers
-        kwargs = {}
-        if command in ['ask']:
-            kwargs = {'db': db, 'model': model, 'max_history_length': config.MAX_HISTORY_LENGTH, 'discord_max_length': config.DISCORD_MAX_LENGTH}
-        elif command in ['deletehistory', 'checkgems', 'givegems', 'takegems', 'slots', 'buy', 'sf', 'use', 'inventory', 'daily', 'leaderboard', 'mine', 'upgrade', 'payoutpoll']:
-            kwargs = {'db': db}
-        elif command in ['ursus', 'servertime', 'time']:
-            kwargs = {'my_time': my_time}
-        elif command in ['wipegems']:
-            kwargs = {'db': db, 'target_role_id': config.MEMBER_ROLE_ID}
-        
-        if command == 'payoutpoll':
-            kwargs['client'] = client
-
-        await handler(message, **kwargs)
-
-    # Special case for admin-only commands not in the main handler dict
-    elif command == 'spawngem':
-        if message.author.id in config.ADMIN_USER_IDS:
-            await manual_gem_spawn()
-        else:
-            await message.channel.send("You are not authorized to use this command.")
 
 async def handle_passive_responses(message):
     """
@@ -231,25 +220,55 @@ async def on_message(message):
     Event triggered when a message is received. Processes the message to handle various commands.
 
     Args:
-        message (discord.Message): The message object received from the channel.
+        message (discord.Message): The message object received.
     """
     # Ignore messages from the bot itself
     if message.author == client.user:
         return
 
-    # Check if the message is a command and route it to the command handler
-    if message.content.startswith('~') or isinstance(message.channel, discord.DMChannel):
-        await handle_command(message)
-    # Otherwise, check for passive responses
-    else:
+    # Handle DMs
+    if isinstance(message.channel, discord.DMChannel):
+        if message.content.lower().startswith('~forward'):
+            await command_handlers.get('forward')
+        else:
+            await message.channel.send("To forward a message to the server, please start your message with `~forward` followed by the message you want to send.")
+        return
+
+    # Handle server messages
+    if not message.content.startswith(config.PREFIX):
         await handle_passive_responses(message)
+        return
+
+    command_body = message.content[len(config.PREFIX):]
+    parts = command_body.split()
+    if not parts:
+        return
+    command = parts[0].lower()
+
+    # Special admin command
+    if command == 'spawngem':
+        if message.author.id in config.ADMIN_USER_IDS:
+            await manual_gem_spawn()
+        else:
+            await message.channel.send("You are not authorized to use this command.")
+        return
+
+    # General command handling
+    handler = command_handlers.get(command)
+    if handler:
+        try:
+            await handler(message)
+        except Exception as e:
+            logging.exception(f"An error occurred while executing command '{command}'")
+            await message.channel.send("An unexpected error occurred. Please try again later.")
  
 @client.event
-async def _delete_message_after_delay(message: discord.Message, delay: int, db):
+async def _delete_message_after_delay(message: discord.Message, delay: int):
     """
     Waits for a specified delay, deletes the message, and cleans up corresponding
     database entries for gem claims.
     """
+    db = db_manager.get_db()
     await asyncio.sleep(delay)
     message_id = message.id
     try:
@@ -288,11 +307,12 @@ async def on_reaction_add(reaction, user):
     Handles reactions added to messages. Checks for reactions on gem spawn messages
     and records claims in Firebase.
     """
-    # Ignore reactions from the bot itself or if Firebase is not initialized
+    db = db_manager.get_db()
     gem_counts = [2, 3, 4, 5, 6]
     weights = [0.5, 0.25, 0.15, 0.07, 0.03]
 
     if user == client.user or db is None:
+        logging.warning("Database not available for on_reaction_add.")
         return
 
     # Check if the reaction is the gem emoji and on the current spawned gem message
@@ -303,12 +323,9 @@ async def on_reaction_add(reaction, user):
         # Check if the user has already claimed this specific gem
         gem_claims_ref = db.collection('gem_claims')
         query = gem_claims_ref.where(filter=FieldFilter('message_id', '==', message_id)).where(filter=FieldFilter('user_id', '==', user.id)).limit(1)
-        docs = query.stream()
-
-        claimed_by_user = False
-        for doc in docs:
-            claimed_by_user = True
-            break  # User has already claimed this gem
+        
+        # any() is a more efficient way to check for existence
+        claimed_by_user = any(query.stream())
 
         if not claimed_by_user:
             current_time = datetime.now(timezone.utc)
@@ -356,7 +373,11 @@ async def on_reaction_add(reaction, user):
                         update_data['inventory'] = {}  # Initialize inventory only if missing
                     user_doc_ref.set(update_data, merge=True)
 
-                    await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)")
+                    if acquisition_multiplier > 1.0:
+                        bonus_gems = gemcount - base_gem_count
+                        await channel.send(f"{user.display_name} has obtained {gemcount} gem(s) ({base_gem_count} base + {bonus_gems} bonus)!")
+                    else:
+                        await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)!")
                     logging.info(f"ID:{user.id} claimed the gem")
                 except Exception as e:
                     logging.error(f"Error recording gem claim in Firebase for {user.display_name}: {e}")
@@ -369,8 +390,7 @@ async def on_reaction_add(reaction, user):
                 first_claim_timestamp[message_id] = current_time
                 logging.info(f"First claim on gem message {message_id} at {current_time}")
                 await process_gem_claim(user, is_sparkly_claim)
-                # Schedule the message for deletion after the 30-second window
-                client.loop.create_task(_delete_message_after_delay(reaction.message, 30, db))
+                client.loop.create_task(_delete_message_after_delay(reaction.message, 30))
 
             elif (current_time - first_claim_time).total_seconds() <= 30: # Not the first claim, but within the 30-second window.
                 await process_gem_claim(user, is_sparkly_claim)

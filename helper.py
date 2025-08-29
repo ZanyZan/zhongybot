@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from firebase_admin import firestore
 import operator
 import random
 
@@ -312,5 +313,64 @@ shop_items = {
         "cost": 25,
         "type": "consumable",
         "effect": {"guaranteed_slot_win": "small"}
-    }
+    },
+        'unicorn': {
+        'name': 'Gem-finding Unicorn',
+        'description': 'A fabulous and magical unicorn that helps you find 20% more gems when mining. "Leave everything to me, darling!"',
+        'cost': 2500,
+        'type': 'unique',
+        'effect': {'mining_multiplier': 1.20}
+    },
 }
+# Pickaxe upgrade costs and max level
+
+PICKAXE_UPGRADE_COSTS = {
+    1: 750,   # To level 2
+    2: 1200,  # To level 3
+    3: 2000,  # To level 4
+    4: 5000,  # To level 5
+}
+MAX_PICKAXE_LEVEL = 5
+PICKAXE_LEVEL_REWARDS = {
+    1: (1, 5), 2: (3, 7), 3: (5, 10), 4: (7, 15), 5: (10, 20),
+}
+
+@firestore.transactional
+def perform_upgrade_transaction(transaction, user_ref):
+    """
+    Performs the pickaxe upgrade within a Firestore transaction.
+    This function can be called from the main command handler.
+    """
+    snapshot = user_ref.get(transaction=transaction)
+    if not snapshot.exists:
+        return "no_inventory", None
+
+    user_data = snapshot.to_dict()
+    inventory = user_data.get('inventory', {})
+    pickaxe_data = inventory.get('pickaxe')
+
+    if not pickaxe_data:
+        return "no_pickaxe", None
+
+    current_level = pickaxe_data.get('level', 1)
+    if current_level >= MAX_PICKAXE_LEVEL:
+        return "max_level", None
+
+    upgrade_cost = PICKAXE_UPGRADE_COSTS.get(current_level)
+    if not upgrade_cost:
+        # This case handles if the level is somehow out of bounds of the cost dictionary
+        return "max_level", None
+
+    current_gems = user_data.get('gem_count', 0)
+    if current_gems < upgrade_cost:
+        return "not_enough_gems", upgrade_cost
+
+    # Deduct cost and upgrade pickaxe
+    inventory['pickaxe']['level'] = current_level + 1
+    
+    transaction.update(user_ref, {
+        'gem_count': firestore.Increment(-upgrade_cost),
+        'inventory': inventory
+    })
+
+    return "success", (current_level + 1, upgrade_cost)
