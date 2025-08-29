@@ -50,6 +50,7 @@ MAX_HISTORY_LENGTH = _get_env_var("MAX_HISTORY_LENGTH", default=20, var_type=int
 MIN_GEM_SPAWN_INTERVAL = _get_env_var("MIN_GEM_SPAWN_INTERVAL", default=21600, var_type=int, required=False)
 MAX_GEM_SPAWN_INTERVAL = _get_env_var("MAX_GEM_SPAWN_INTERVAL", default=43200, var_type=int, required=False)
 MINE_COOLDOWN_SECONDS = _get_env_var("MINE_COOLDOWN_SECONDS", default=3600, var_type=int, required=False)
+PREFIX = '~'
 
 # --- Emojis ---
 EMOJI_FREE = '\U0001F193'
