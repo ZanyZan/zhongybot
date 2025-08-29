@@ -1,6 +1,14 @@
 import logging
-
 import sys
+# Configure logging at the very beginning, BEFORE any other modules that might use logging are imported.
+# This is the most critical part of the fix.
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler("zhongybot.log"),
+                        logging.StreamHandler(sys.stdout)
+                    ])
+
 import time
 from datetime import datetime, timezone
 import random
@@ -13,20 +21,13 @@ import discord
 from discord.ext import tasks
 import google.generativeai as genai
 from google.cloud.firestore_v1.base_query import FieldFilter
+from google.api_core import exceptions as google_exceptions
+from firebase_admin.firestore import SERVER_TIMESTAMP, Increment
 
 import db_manager
 import bot_comm
 
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_acquisition_multiplier
-
-# Configure logging at the very beginning, BEFORE any other modules that might use logging are imported.
-# This is the most critical part of the fix.
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.FileHandler("zhongybot.log"),
-                        logging.StreamHandler(sys.stdout)
-                    ])
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -229,7 +230,7 @@ async def on_message(message):
     # Handle DMs
     if isinstance(message.channel, discord.DMChannel):
         if message.content.lower().startswith('~forward'):
-            await command_handlers.get('forward')
+            await command_handlers['forward'](message)
         else:
             await message.channel.send("To forward a message to the server, please start your message with `~forward` followed by the message you want to send.")
         return
@@ -261,8 +262,7 @@ async def on_message(message):
         except Exception as e:
             logging.exception(f"An error occurred while executing command '{command}'")
             await message.channel.send("An unexpected error occurred. Please try again later.")
- 
-@client.event
+
 async def _delete_message_after_delay(message: discord.Message, delay: int):
     """
     Waits for a specified delay, deletes the message, and cleans up corresponding
@@ -298,6 +298,10 @@ async def _delete_message_after_delay(message: discord.Message, delay: int):
             if deleted_count > 0:
                 batch.commit()
                 logging.info(f"Cleaned up {deleted_count} claim(s) from database for message ID {message_id}.")
+        except google_exceptions.Unavailable:
+            # This is a background task, so we just log the warning. The next user-facing
+            # command that fails will trigger the re-initialization.
+            logging.warning("Firestore unavailable during gem claim cleanup for message ID %s.", message_id)
         except Exception as e:
             logging.error(f"An error occurred while cleaning up gem claims for message ID {message_id}: {e}")
 
@@ -361,13 +365,13 @@ async def on_reaction_add(reaction, user):
                         'message_id': message_id,
                         'user_id': user.id,
                         'username': user.display_name,
-                        'timestamp': firestore.SERVER_TIMESTAMP
+                        'timestamp': SERVER_TIMESTAMP
                     })
 
                     # Update user's gem count and ensure inventory is not overwritten
                     update_data = {
                         'username': user.display_name,
-                        'gem_count': firestore.Increment(gemcount)
+                        'gem_count': Increment(gemcount)
                     }
                     if not user_doc.exists or 'inventory' not in user_doc.to_dict():
                         update_data['inventory'] = {}  # Initialize inventory only if missing
@@ -379,6 +383,10 @@ async def on_reaction_add(reaction, user):
                     else:
                         await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)!")
                     logging.info(f"ID:{user.id} claimed the gem")
+                except google_exceptions.Unavailable:
+                    logging.warning("Firestore unavailable, telling user to try again.")
+                    await channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
+                    db_manager.reinitialize_db()
                 except Exception as e:
                     logging.error(f"Error recording gem claim in Firebase for {user.display_name}: {e}")
                     await channel.send("A server error occurred while trying to claim the gem.")
