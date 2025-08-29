@@ -1,14 +1,5 @@
 import logging
 
-# Configure logging at the very beginning, BEFORE any other modules that might use logging are imported.
-# This is the most critical part of the fix.
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s',
-                    handlers=[
-                        logging.FileHandler("zhongybot.log"),
-                        logging.StreamHandler(sys.stdout)
-                    ])
-
 import sys
 import time
 from datetime import datetime, timezone
@@ -27,6 +18,15 @@ import db_manager
 import bot_comm
 
 from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_acquisition_multiplier
+
+# Configure logging at the very beginning, BEFORE any other modules that might use logging are imported.
+# This is the most critical part of the fix.
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s',
+                    handlers=[
+                        logging.FileHandler("zhongybot.log"),
+                        logging.StreamHandler(sys.stdout)
+                    ])
 
 intents = discord.Intents.default()
 intents.message_content = True
