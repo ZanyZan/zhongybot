@@ -925,16 +925,30 @@ async def handle_wipegems(message, target_role_id):
         await message.channel.send(f"No users with role '{target_role.name}' found in this server.")  
         
 async def handle_shop(message):
-    """Displays the items available in the shop."""
+    """Displays the items available in the shop, sorted by category."""
     if message.channel.id not in config.BOT_SPAM_CHANNEL_ID:
         await message.channel.send(f"That command is restricted to <#{config.BOT_SPAM_CHANNEL_ID}>.")
         return
 
-    shop_message = "Welcome to the Gem Shop!\n\nAvailable Items:\n"
+    # Group items by category
+    categorized_items = {}
     for item_id, item_info in shop_items.items():
-        shop_message += f"- **{item_info['name']}** (`{item_id}`): {item_info['description']} - Cost: {item_info['cost']} gem(s)\n"
+        category = item_info.get('category', 'Uncategorized')
+        if category not in categorized_items:
+            categorized_items[category] = []
+        categorized_items[category].append((item_id, item_info))
 
-    embed = discord.Embed(title="Gem Shop", description=shop_message, colour=discord.Colour.blue())
+    embed = discord.Embed(title="Gem Shop", description="Welcome! Use `~buy <item_id>` to purchase.", colour=discord.Colour.blue())
+
+    # Sort categories for consistent order and add them as fields to the embed
+    for category in sorted(categorized_items.keys()):
+        items_in_category = categorized_items[category]
+        value = ""
+        for item_id, item_info in items_in_category:
+            value += f"**{item_info['name']}** (`{item_id}`)\n*{item_info['description']}*\nCost: {item_info['cost']} {config.EMOJI_GEM}\n\n"
+        
+        embed.add_field(name=f"--- {category} ---", value=value.strip(), inline=False)
+
     await message.channel.send(embed=embed)
 
 

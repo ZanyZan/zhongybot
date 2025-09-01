@@ -125,6 +125,8 @@ command_handlers = {
     "checkgems": bot_comm.handle_checkgems,
     "gems": bot_comm.handle_checkgems,
     "ask": lambda msg: bot_comm.handle_ask(msg, model, config.MAX_HISTORY_LENGTH, config.DISCORD_MAX_LENGTH),
+    "weaponf": bot_comm.handle_weaponf,
+    "esfera": bot_comm.handle_esfera,
     "deletehistory": bot_comm.handle_deletehistory,
     "givegems": bot_comm.handle_givegems,
     "takegems": bot_comm.handle_takegems,

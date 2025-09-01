@@ -247,79 +247,90 @@ shop_items = {
     "gem_booster": {
         "name": "Gem Acquisition Booster",
         "description": "Passively increases your gem acquisition rate. (Does not apply to slots)",
-        "cost": 500, # Example cost
-        "type": "passive", # Indicate it's a passive item
-        "effect": {"acquisition_multiplier": 1.3}
+        "cost": 500,
+        "type": "passive",
+        "effect": {"acquisition_multiplier": 1.3},
+        "category": "Boosters"
     },
     "curse_ward": {
         "name": "Curse Ward",
         "description": "Supposedly improves your odds and makes you more resistant to misfortune.",
         "cost": 750,
         "type": "passive",
-        "effect": {}
+        "effect": {},
+        "category": "Charms"
     },
     "luck_charm": {
         "name": "Luck Charm",
         "description": "Supposedly boosts your item drop rate in other games. (Such as MapleStory)",
         "cost": 1000,
         "type": "passive",
-        "effect": {}
+        "effect": {},
+        "category": "Charms"
     },
     "golden_maple_leaf": {
         "name": "Golden Maple Leaf",
         "description": "A perfectly preserved, gilded maple leaf. A true collector's item for the distinguished Mapler.",
         "cost": 5000,
         "type": "passive",
-        "effect": {}
+        "effect": {},
+        "category": "Collectibles"
     },
     "pitched_fragment": {
         "name": "Pitched Boss Fragment",
         "description": "A fragment of a mythical boss item. It hums with untold power... or maybe it's just a shiny rock. A true status symbol.",
         "cost": 10000,
         "type": "passive",
-        "effect": {}
+        "effect": {},
+        "category": "Collectibles"
     },
     "zhongys_blessing": {
         "name": "Zhongy's Blessing",
         "description": "A small, carved charm that looks suspiciously like the bot. It offers no real benefits, but it feels nice to have.",
         "cost": 2500,
         "type": "passive",
-        "effect": {}
+        "effect": {},
+        "category": "Collectibles"
     },
     "zyn_ban_hammer": {
         "name": "The Zyn Ban Hammer",
         "description": "For the low, low price of 99999 gems, you can ban Zyn. Or can you?",
         "cost": 99999,
         "type": "passive",
-        "effect": {}
+        "effect": {},
+        "category": "Fun"
     },
     "pickaxe": {
         "name": "Sturdy Pickaxe",
         "description": "Allows you to use the `~mine` command to find gems. A must-have for any serious gem collector.",
         "cost": 500,
         "type": "passive",
-        "effect": {}
+        "effect": {},
+        "category": "Tools"
     },
     "suspicious_bag": {
         "name": "Suspicious-Looking Bag",
         "description": "What's inside? Could be gems, could be nothing, or it could be a curse that makes the bot mock you for an hour. High risk, high reward!",
         "cost": 50,
         "type": "consumable",
-        "effect": {}
+        "effect": {},
+        "category": "Consumables"
     },
     "rigged_ticket": {
         "name": "Slot Machine Rigged Ticket",
         "description": "Guarantees a small win on your next slot machine pull. One-time use. Don't tell Zany.",
         "cost": 25,
         "type": "consumable",
-        "effect": {"guaranteed_slot_win": "small"}
+        "effect": {"guaranteed_slot_win": "small"},
+        "category": "Consumables"
     },
         'unicorn': {
         'name': 'Gem-finding Unicorn',
         'description': 'A fabulous and magical unicorn that helps you find 20% more gems when mining. "Leave everything to me, darling!"',
         'cost': 2500,
         'type': 'unique',
-        'effect': {'mining_multiplier': 1.20}
+        'effect': {'mining_multiplier': 1.20},
+        'category': 'Boosters'
     },
 }
 # Pickaxe upgrade costs and max level
