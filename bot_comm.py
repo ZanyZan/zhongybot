@@ -1,5 +1,6 @@
 import discord
 import config
+import os, sys
 from datetime import datetime, timedelta, timezone
 import random
 import weapons as wp
@@ -73,11 +74,14 @@ async def handle_checkgems(message):
         embed = discord.Embed(description=response, colour=discord.Colour.purple())
         await message.channel.send(embed=embed)
 
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_checkgems. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error retrieving gem count from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve your gem count.")
         
@@ -267,11 +271,14 @@ async def handle_ask(message, model, max_history_length, discord_max_length):
             for chunk in response_chunks:
                 await message.channel.send(chunk)
 
-        except google_exceptions.Unavailable:
-            logging.warning("Firestore unavailable, telling user to try again.")
-            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-            reinitialize_db()
         except Exception as e:
+            if isinstance(e, google_exceptions.Unavailable):
+                logging.critical(f"Database unavailable in handle_ask. Restarting bot. Error: {e}")
+                try:
+                    await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+                except discord.Forbidden:
+                    logging.warning("Could not send restart message to channel due to permissions.")
+                os.execv(sys.executable, ['python'] + sys.argv)
             logging.exception(f"An error occurred during LLM interaction:")  # Use logging.exception
             await message.channel.send("Sorry, I couldn't process your request at this time.")
     else:
@@ -296,11 +303,14 @@ async def handle_deletehistory(message):
                 await message.channel.send(f"Conversation history for {message.author.display_name} in this channel has been deleted.")
             else:
                 await message.channel.send(f"No conversation history found for {message.author.display_name} in this channel.")
-        except google_exceptions.Unavailable:
-            logging.warning("Firestore unavailable, telling user to try again.")
-            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-            reinitialize_db()
         except Exception as e:
+            if isinstance(e, google_exceptions.Unavailable):
+                logging.critical(f"Database unavailable in handle_deletehistory. Restarting bot. Error: {e}")
+                try:
+                    await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+                except discord.Forbidden:
+                    logging.warning("Could not send restart message to channel due to permissions.")
+                os.execv(sys.executable, ['python'] + sys.argv)
             logging.exception(f"Error deleting history from Firebase:")  # Use logging.exception
             await message.channel.send("An error occurred while trying to delete your history.")
 
@@ -366,11 +376,14 @@ async def handle_givegems(message):
         await message.channel.send(f"Successfully gave {amount} gem(s) to {target_user.display_name}.")
         logging.info(f"Gave {amount} gem(s) to user ID:{target_user.id}")
 
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_givegems. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.exception(f"Error giving gems:")  # Use logging.exception
         await message.channel.send("An error occurred while trying to give gems.")
 
@@ -444,11 +457,14 @@ async def handle_takegems(message):
         else:
             await message.channel.send(f"Could not find {target_user.display_name}'s gem count in the database.")
 
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_takegems. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.exception(f"Error taking gems:")  # Use logging.exception
         await message.channel.send("An error occurred while trying to take gems.")
 
@@ -545,11 +561,14 @@ async def handle_mine(message):
             await message.channel.send(response_message)
             logging.info(f"User {message.author.display_name} ({user_id}) mined {final_gems_found} gems.")
 
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_mine. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error during mining for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to mine.")
 
@@ -585,11 +604,14 @@ async def handle_upgrade(message):
                 new_level, cost = data
                 await message.channel.send(f"Congratulations! You spent {cost} gems and upgraded your pickaxe to **Level {new_level}**!")
                 logging.info(f"User {message.author.display_name} ({user_id}) upgraded pickaxe to level {new_level}.")
-        except google_exceptions.Unavailable:
-            logging.warning("Firestore unavailable, telling user to try again.")
-            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-            reinitialize_db()
         except Exception as e:
+            if isinstance(e, google_exceptions.Unavailable):
+                logging.critical(f"Database unavailable in handle_upgrade. Restarting bot. Error: {e}")
+                try:
+                    await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+                except discord.Forbidden:
+                    logging.warning("Could not send restart message to channel due to permissions.")
+                os.execv(sys.executable, ['python'] + sys.argv)
             logging.error(f"Error during pickaxe upgrade for user {user_id}: {e}")
             await message.channel.send("An error occurred while trying to upgrade your pickaxe.")
     else: # Show info
@@ -628,11 +650,14 @@ async def handle_upgrade(message):
                 embed.set_footer(text=f"To perform the upgrade, type `~upgrade confirm`")
             
             await message.channel.send(embed=embed)
-        except google_exceptions.Unavailable:
-            logging.warning("Firestore unavailable, telling user to try again.")
-            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-            reinitialize_db()
         except Exception as e:
+            if isinstance(e, google_exceptions.Unavailable):
+                logging.critical(f"Database unavailable in handle_upgrade. Restarting bot. Error: {e}")
+                try:
+                    await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+                except discord.Forbidden:
+                    logging.warning("Could not send restart message to channel due to permissions.")
+                os.execv(sys.executable, ['python'] + sys.argv)
             logging.error(f"Error during pickaxe upgrade check for user {user_id}: {e}")
             await message.channel.send("An error occurred while checking your pickaxe status.")
 
@@ -828,11 +853,14 @@ async def handle_slots(message):
                 await message.channel.send(final_message)
 
 
-        except google_exceptions.Unavailable:
-            logging.warning("Firestore unavailable, telling user to try again.")
-            await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-            reinitialize_db()
         except Exception as e:
+            if isinstance(e, google_exceptions.Unavailable):
+                logging.critical(f"Database unavailable in handle_slots. Restarting bot. Error: {e}")
+                try:
+                    await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+                except discord.Forbidden:
+                    logging.warning("Could not send restart message to channel due to permissions.")
+                os.execv(sys.executable, ['python'] + sys.argv)
             logging.exception(f"Error playing slots:")  # Use logging.exception
             await message.channel.send("An error occurred while trying to play the slot machine.")
     else:
@@ -1026,13 +1054,15 @@ async def handle_buy(message):
             await message.channel.send(f"Successfully purchased **{item_to_buy['name']}** for {item_to_buy['cost']} gem(s). Your new gem balance is {new_gems}.")
         else:
             await message.channel.send("An unexpected error occurred during your purchase.")
-
-
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
+    
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_buy. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error during purchase transaction for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to process your purchase.")    
         
@@ -1065,11 +1095,14 @@ async def handle_inventory(message):
         embed = discord.Embed(title="Inventory", description=response, colour=discord.Colour.green())
         await message.channel.send(embed=embed)
 
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_inventory. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error retrieving inventory from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve your inventory.")
 
@@ -1153,11 +1186,14 @@ async def handle_use(message):
                     await message.channel.send(random.choice(curses))
             # You can add more `elif item_id_to_use == "other_item":` blocks here for other consumables.
             
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_use. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error using item for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to use the item.")
         
@@ -1219,11 +1255,14 @@ async def handle_daily(message):
 
         await message.channel.send(response_message)
         logging.info(f"User {message.author.display_name} ({user_id}) claimed their daily {final_daily_reward} gems.")
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_daily. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error processing daily claim for user {user_id}: {e}")
         await message.channel.send("An error occurred while processing your daily claim.")
 
@@ -1259,11 +1298,14 @@ async def handle_leaderboard(message):
         embed = discord.Embed(title=f"{config.EMOJI_DIAMOND} Gem Leaderboard {config.EMOJI_DIAMOND}", description=response, colour=discord.Colour.gold())
         await message.channel.send(embed=embed)
 
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_leaderboard. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error retrieving leaderboard from Firebase: {e}")
         await message.channel.send("An error occurred while trying to retrieve the leaderboard.")
 
@@ -1338,11 +1380,14 @@ async def handle_starforce(message):
         embed = discord.Embed(description=response, colour=discord.Colour.purple())
         await message.channel.send(embed=embed)
 
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_starforce. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error during starforce for user {user_id}: {e}")
         await message.channel.send("An error occurred while trying to star force.")
 
@@ -1515,11 +1560,14 @@ async def handle_payoutpoll(message, client):
             
         logging.info(f"Paid out {amount} gems to {len(winning_voters)} users for poll {poll_message.id}.")
 
-    except google_exceptions.Unavailable:
-        logging.warning("Firestore unavailable, telling user to try again.")
-        await message.channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-        reinitialize_db()
     except Exception as e:
+        if isinstance(e, google_exceptions.Unavailable):
+            logging.critical(f"Database unavailable in handle_payoutpoll. Restarting bot. Error: {e}")
+            try:
+                await message.channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+            except discord.Forbidden:
+                logging.warning("Could not send restart message to channel due to permissions.")
+            os.execv(sys.executable, ['python'] + sys.argv)
         logging.error(f"Error committing gem payouts to Firebase: {e}")
         await message.channel.send("An error occurred while trying to pay out gems.")
 

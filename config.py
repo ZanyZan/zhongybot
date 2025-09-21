@@ -47,9 +47,9 @@ HARRI_USER_ID = _get_env_var("HARRI_USER_ID", var_type=int)
 # --- Bot Behavior Settings ---
 DISCORD_MAX_LENGTH = _get_env_var("DISCORD_MAX_LENGTH", default=2000, var_type=int, required=False)
 MAX_HISTORY_LENGTH = _get_env_var("MAX_HISTORY_LENGTH", default=20, var_type=int, required=False)
-MIN_GEM_SPAWN_INTERVAL = _get_env_var("MIN_GEM_SPAWN_INTERVAL", default=21600, var_type=int, required=False)
-MAX_GEM_SPAWN_INTERVAL = _get_env_var("MAX_GEM_SPAWN_INTERVAL", default=43200, var_type=int, required=False)
-MINE_COOLDOWN_SECONDS = _get_env_var("MINE_COOLDOWN_SECONDS", default=3600, var_type=int, required=False)
+MIN_GEM_SPAWN_INTERVAL = _get_env_var("MIN_GEM_SPAWN_INTERVAL", default=36000, var_type=int, required=False)
+MAX_GEM_SPAWN_INTERVAL = _get_env_var("MAX_GEM_SPAWN_INTERVAL", default=64800, var_type=int, required=False)
+MINE_COOLDOWN_SECONDS = _get_env_var("MINE_COOLDOWN_SECONDS", default=7200, var_type=int, required=False)
 PREFIX = '~'
 
 # --- Emojis ---

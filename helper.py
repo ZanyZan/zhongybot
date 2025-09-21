@@ -343,7 +343,7 @@ PICKAXE_UPGRADE_COSTS = {
 }
 MAX_PICKAXE_LEVEL = 5
 PICKAXE_LEVEL_REWARDS = {
-    1: (1, 5), 2: (3, 7), 3: (5, 10), 4: (7, 15), 5: (10, 20),
+    1: (2, 10), 2: (6, 14), 3: (10, 20), 4: (14, 30), 5: (20, 40),
 }
 
 @firestore.transactional

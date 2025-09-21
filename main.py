@@ -15,7 +15,7 @@ import random
 import re
 import asyncio
 import math
-
+import os
 import config  # Now that logging is configured, we can safely import our other modules.
 import discord
 from discord.ext import tasks
@@ -151,6 +151,7 @@ command_handlers = {
     "ursus": lambda msg: bot_comm.handle_ursus(msg, my_time),
     "servertime": lambda msg: bot_comm.handle_servertime(msg, my_time),
     "time": lambda msg: bot_comm.handle_time(msg, my_time),
+    "roll": bot_comm.handle_roll,
 }
 
 @client.event
@@ -314,10 +315,12 @@ async def on_reaction_add(reaction, user):
     and records claims in Firebase.
     """
     db = db_manager.get_db()
-    gem_counts = [2, 3, 4, 5, 6]
+    gem_counts = [4, 5, 6, 7, 8]
     weights = [0.5, 0.25, 0.15, 0.07, 0.03]
 
-    if user == client.user or db is None:
+    if user == client.user:
+        return
+    elif db is None:
         logging.warning("Database not available for on_reaction_add.")
         return
 
@@ -343,7 +346,7 @@ async def on_reaction_add(reaction, user):
             async def process_gem_claim(user, is_sparkly):
                 # Determine base gem count
                 if is_sparkly:
-                    base_gem_count = random.randint(6, 10)
+                    base_gem_count = random.randint(10, 18)
                     logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
                 else:
                     base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
@@ -385,13 +388,17 @@ async def on_reaction_add(reaction, user):
                     else:
                         await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)!")
                     logging.info(f"ID:{user.id} claimed the gem")
-                except google_exceptions.Unavailable:
-                    logging.warning("Firestore unavailable, telling user to try again.")
-                    await channel.send("I'm having trouble reaching the database right now. Please try your command again in a few moments.")
-                    db_manager.reinitialize_db()
                 except Exception as e:
-                    logging.error(f"Error recording gem claim in Firebase for {user.display_name}: {e}")
-                    await channel.send("A server error occurred while trying to claim the gem.")
+                    if isinstance(e, google_exceptions.Unavailable):
+                        logging.critical(f"Database unavailable during gem claim. Restarting bot. Error: {e}")
+                        try:
+                            await channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
+                        except discord.Forbidden:
+                            logging.warning("Could not send restart message to channel due to permissions.")
+                        os.execv(sys.executable, ['python'] + sys.argv)
+                    else:
+                        logging.error(f"Error recording gem claim in Firebase for {user.display_name}: {e}")
+                        await channel.send("A server error occurred while trying to claim the gem.")
 
             # Determine if it was a sparkly gem based on the message content
             is_sparkly_claim = f"{config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE}" in reaction.message.content
@@ -400,13 +407,13 @@ async def on_reaction_add(reaction, user):
                 first_claim_timestamp[message_id] = current_time
                 logging.info(f"First claim on gem message {message_id} at {current_time}")
                 await process_gem_claim(user, is_sparkly_claim)
-                client.loop.create_task(_delete_message_after_delay(reaction.message, 30))
+                client.loop.create_task(_delete_message_after_delay(reaction.message, 45))  # Schedule deletion after 45 seconds
 
-            elif (current_time - first_claim_time).total_seconds() <= 30: # Not the first claim, but within the 30-second window.
+            elif (current_time - first_claim_time).total_seconds() <= 45: # Not the first claim, but within the 45-second window.
                 await process_gem_claim(user, is_sparkly_claim)
 
             else:
-                logging.info(f"Reaction on gem message {message_id} by {user.display_name} was outside the 30-second window.")
+                logging.info(f"Reaction on gem message {message_id} by {user.display_name} was outside the 45-second window.")
 
         else:
             logging.info(f"User {user.display_name} has already claimed gem {message_id}.")
