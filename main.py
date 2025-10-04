@@ -195,7 +195,14 @@ async def handle_passive_responses(message):
         response = 'No it isn\'t'
         await message.reply(response)
         return
-
+    if re.search("read", message.content.lower()):
+        roll = random.randint(1, 5)
+        logging.info(f"Read was typed, rolled {roll}")
+        if roll == 1:
+            response = "Debris can't read <:DebrisCantRead:1157773828173332550>"
+            await message.reply(response)
+        return
+    # Harri special responses
     if message.author.id == config.HARRI_USER_ID:
         roll = random.randint(1, 1000)
         logging.info(f"Harri rolled {roll}")
