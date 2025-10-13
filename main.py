@@ -25,9 +25,9 @@ from google.api_core import exceptions as google_exceptions
 from firebase_admin.firestore import SERVER_TIMESTAMP, Increment
 
 import db_manager
-import bot_comm
+import bot_comm 
 
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_acquisition_multiplier
+from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_booster_multiplier
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -363,49 +363,37 @@ async def on_reaction_add(reaction, user):
                 user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
                 user_doc = user_doc_ref.get()
                 inventory = user_doc.to_dict().get('inventory', {}) if user_doc.exists else {}
-                acquisition_multiplier = get_acquisition_multiplier(inventory)
+                acquisition_multiplier = get_booster_multiplier(inventory)
                 if acquisition_multiplier > 1.0:
                     logging.info(f"User {user.display_name} has gem booster. Applying multiplier: {acquisition_multiplier}")
 
                 # Calculate final gem count
                 gemcount = math.ceil(base_gem_count * acquisition_multiplier)
                 logging.info(f"Final gem count after multiplier: {gemcount}")
+                
+                # Record the claim in Firebase
+                gem_claims_ref.add({
+                    'message_id': message_id,
+                    'user_id': user.id,
+                    'username': user.display_name,
+                    'timestamp': SERVER_TIMESTAMP
+                })
 
-                try:
-                    # Record the claim in Firebase
-                    gem_claims_ref.add({
-                        'message_id': message_id,
-                        'user_id': user.id,
-                        'username': user.display_name,
-                        'timestamp': SERVER_TIMESTAMP
-                    })
+                # Update user's gem count and ensure inventory is not overwritten
+                update_data = {
+                    'username': user.display_name,
+                    'gem_count': Increment(gemcount)
+                }
+                if not user_doc.exists or 'inventory' not in user_doc.to_dict():
+                    update_data['inventory'] = {}  # Initialize inventory only if missing
+                user_doc_ref.set(update_data, merge=True)
 
-                    # Update user's gem count and ensure inventory is not overwritten
-                    update_data = {
-                        'username': user.display_name,
-                        'gem_count': Increment(gemcount)
-                    }
-                    if not user_doc.exists or 'inventory' not in user_doc.to_dict():
-                        update_data['inventory'] = {}  # Initialize inventory only if missing
-                    user_doc_ref.set(update_data, merge=True)
-
-                    if acquisition_multiplier > 1.0:
-                        bonus_gems = gemcount - base_gem_count
-                        await channel.send(f"{user.display_name} has obtained {gemcount} gem(s) ({base_gem_count} base + {bonus_gems} bonus)!")
-                    else:
-                        await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)!")
-                    logging.info(f"ID:{user.id} claimed the gem")
-                except Exception as e:
-                    if isinstance(e, google_exceptions.Unavailable):
-                        logging.critical(f"Database unavailable during gem claim. Restarting bot. Error: {e}")
-                        try:
-                            await channel.send("A critical database error occurred. The bot will now restart. Please wait a moment.")
-                        except discord.Forbidden:
-                            logging.warning("Could not send restart message to channel due to permissions.")
-                        os.execv(sys.executable, ['python'] + sys.argv)
-                    else:
-                        logging.error(f"Error recording gem claim in Firebase for {user.display_name}: {e}")
-                        await channel.send("A server error occurred while trying to claim the gem.")
+                if acquisition_multiplier > 1.0:
+                    bonus_gems = gemcount - base_gem_count
+                    await channel.send(f"{user.display_name} has obtained {gemcount} gem(s) ({base_gem_count} base + {bonus_gems} bonus)!")
+                else:
+                    await channel.send(f"{user.display_name} has obtained {gemcount} gem(s)!")
+                logging.info(f"ID:{user.id} claimed the gem")
 
             # Determine if it was a sparkly gem based on the message content
             is_sparkly_claim = f"{config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE}" in reaction.message.content
@@ -413,11 +401,24 @@ async def on_reaction_add(reaction, user):
             if first_claim_time is None:  # This is the first claim.
                 first_claim_timestamp[message_id] = current_time
                 logging.info(f"First claim on gem message {message_id} at {current_time}")
-                await process_gem_claim(user, is_sparkly_claim)
+                try:
+                    await process_gem_claim(user, is_sparkly_claim)
+                except (google_exceptions.Unavailable, google_exceptions.DeadlineExceeded) as e:
+                    logging.error(f"DB error on first gem claim for {user.display_name}: {e}")
+                    await channel.send(f"Sorry {user.mention}, there was a database connection issue. Please try reacting again!")
+                    # Reset first claim time to allow another user to be "first"
+                    first_claim_timestamp[message_id] = None 
+                    return # Exit to prevent scheduling deletion
                 client.loop.create_task(_delete_message_after_delay(reaction.message, 45))  # Schedule deletion after 45 seconds
 
             elif (current_time - first_claim_time).total_seconds() <= 45: # Not the first claim, but within the 45-second window.
-                await process_gem_claim(user, is_sparkly_claim)
+                try:
+                    await process_gem_claim(user, is_sparkly_claim)
+                except (google_exceptions.Unavailable, google_exceptions.DeadlineExceeded) as e:
+                    logging.error(f"DB error on subsequent gem claim for {user.display_name}: {e}")
+                    # Don't need to send a message here as the user can just try again.
+                    # The error is logged for debugging.
+                    pass
 
             else:
                 logging.info(f"Reaction on gem message {message_id} by {user.display_name} was outside the 45-second window.")

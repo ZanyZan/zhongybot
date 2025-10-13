@@ -1,7 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from firebase_admin import firestore
 import operator
+import asyncio
 import random
+from functools import wraps
+from google.api_core import exceptions as google_exceptions
+import logging
 
 #function helper to format an epoch timestamp to a gicen timezone and format
 def format_timestamp(timestamp, timezone, format):
@@ -31,16 +35,14 @@ def calculate_time(time1, operator, time2):
 
 def get_start_of_week(date: datetime) -> datetime:
   """
-  Calculates a new time based on the operator provided.
+  Calculates the start of the week (Monday) for a given date.
   
   Args:
-      time1 (int): First time (epoch in seconds).
-      operator (str): Operator ('+' or '-').
-      time2 (int): Second time to add or subtract.
-      
+      date (datetime): Input date.
+
   Returns:
-      int: Resulting time in epoch seconds.
-    """
+      datetime: The datetime object representing the start of the week (Monday at midnight).
+  """
   # Calculate the start of the week (Monday)
   start_of_week = date - timedelta(days=date.weekday())
   return start_of_week
@@ -48,13 +50,13 @@ def get_start_of_week(date: datetime) -> datetime:
 
 def get_end_of_week(start_of_week: datetime) -> datetime:
   """
-    Calculates the end of the week (Sunday) for a given start date (Monday).
-    
-    Args:
-        date (datetime): Input date.
-    
-    Returns:
-        datetime: Start of the week (Monday).
+  Calculates the end of the week (Sunday) for a given start date (Monday).
+  
+  Args:
+      start_of_week (datetime): The datetime object for the start of the week (must be a Monday).
+  
+  Returns:
+      datetime: The datetime object representing the end of the week (Sunday).
   """
   # Calculate the end of the week (Sunday)
   end_of_week = start_of_week + timedelta(days=6)
@@ -185,33 +187,52 @@ def convert(seconds: int) -> str:
     return "%d:%02d:%02d" % (hour, minutes, seconds)
 
 
-def get_acquisition_multiplier(inventory: dict) -> float:
+def with_db_error_handling(func):
     """
-    Checks a user's inventory for a gem booster and returns the corresponding
-    acquisition multiplier from the inventory data.
+    A decorator that wraps bot command functions to handle transient
+    Firestore database errors (e.g., Unavailable, DeadlineExceeded) gracefully.
+    It implements a retry mechanism with exponential backoff.
+    """
+    @wraps(func)
+    async def wrapper(message, *args, **kwargs):
+        retries = 3
+        delay = 1  # Initial delay in seconds
+        for i in range(retries):
+            try:
+                # Attempt to execute the wrapped command function
+                return await func(message, *args, **kwargs)
+            except (google_exceptions.Unavailable, google_exceptions.DeadlineExceeded) as e:
+                logging.warning(f"DB connection error in '{func.__name__}' (Attempt {i + 1}/{retries}): {e}")
+                if i < retries - 1:
+                    await asyncio.sleep(delay)
+                    delay *= 2  # Exponential backoff
+                else:
+                    logging.error(f"DB operation failed after {retries} retries in '{func.__name__}'.")
+                    await message.channel.send("I'm having trouble connecting to the database right now. Please try again in a moment.")
+                    return
+            except Exception as e:
+                # Catch any other unexpected errors from the command
+                logging.exception(f"An unexpected error occurred in command '{func.__name__}'")
+                await message.channel.send("An unexpected error occurred while running this command. The issue has been logged.")
+                return
+    return wrapper
 
-    This function relies on the item's 'effect' dictionary being stored
-    in the user's inventory document in Firebase upon purchase.
 
-    Args:
-        inventory: The user's inventory dictionary from Firebase.
-
-    Returns:
-        The acquisition multiplier (defaults to 1.0 if no booster is found).
+def get_booster_multiplier(inventory: dict) -> float:
+    """
+    Checks for a gem booster in the inventory and returns the multiplier
+    based on its level.
     """
     if not inventory:
         return 1.0
 
-    # Check for the specific booster item in the user's inventory
     gem_booster_item = inventory.get("gem_booster")
     if gem_booster_item and gem_booster_item.get("quantity", 0) > 0:
-        # The effect is stored directly with the item in the user's inventory
-        booster_effect = gem_booster_item.get("effect", {})
-        # Get the multiplier from the effect, defaulting to 1.0 if not found
-        return booster_effect.get("acquisition_multiplier", 1.0)
-    
-    return 1.0
+        level = gem_booster_item.get("level", 1)
+        # Get the multiplier from the level map, defaulting to 1.0 if not found
+        return GEM_BOOSTER_LEVEL_MULTIPLIERS.get(level, 1.0)
 
+    return 1.0
 
 
 
@@ -249,7 +270,7 @@ shop_items = {
         "description": "Passively increases your gem acquisition rate. (Does not apply to slots)",
         "cost": 500,
         "type": "passive",
-        "effect": {"acquisition_multiplier": 1.3},
+        "effect": {}, # Effect is now level-based
         "category": "Boosters"
     },
     "curse_ward": {
@@ -346,6 +367,18 @@ PICKAXE_LEVEL_REWARDS = {
     1: (2, 10), 2: (6, 14), 3: (10, 20), 4: (14, 30), 5: (20, 40),
 }
 
+# Gem Booster upgrade costs and max level
+GEM_BOOSTER_UPGRADE_COSTS = {
+    1: 1000,  # To level 2
+    2: 1750,  # To level 3
+    3: 2500,  # To level 4
+    4: 4000,  # To level 5
+}
+MAX_GEM_BOOSTER_LEVEL = 5
+GEM_BOOSTER_LEVEL_MULTIPLIERS = {
+    1: 1.3, 2: 1.4, 3: 1.5, 4: 1.6, 5: 1.75,
+}
+
 @firestore.transactional
 def perform_upgrade_transaction(transaction, user_ref):
     """
@@ -379,6 +412,44 @@ def perform_upgrade_transaction(transaction, user_ref):
     # Deduct cost and upgrade pickaxe
     inventory['pickaxe']['level'] = current_level + 1
     
+    transaction.update(user_ref, {
+        'gem_count': firestore.Increment(-upgrade_cost),
+        'inventory': inventory
+    })
+
+    return "success", (current_level + 1, upgrade_cost)
+
+@firestore.transactional
+def perform_booster_upgrade_transaction(transaction, user_ref):
+    """
+    Performs the Gem Acquisition Booster upgrade within a Firestore transaction.
+    """
+    snapshot = user_ref.get(transaction=transaction)
+    if not snapshot.exists:
+        return "no_inventory", None
+
+    user_data = snapshot.to_dict()
+    inventory = user_data.get('inventory', {})
+    booster_data = inventory.get('gem_booster')
+
+    if not booster_data:
+        return "no_booster", None
+
+    current_level = booster_data.get('level', 1)
+    if current_level >= MAX_GEM_BOOSTER_LEVEL:
+        return "max_level", None
+
+    upgrade_cost = GEM_BOOSTER_UPGRADE_COSTS.get(current_level)
+    if not upgrade_cost:
+        return "max_level", None
+
+    current_gems = user_data.get('gem_count', 0)
+    if current_gems < upgrade_cost:
+        return "not_enough_gems", upgrade_cost
+
+    # Deduct cost and upgrade booster
+    inventory['gem_booster']['level'] = current_level + 1
+
     transaction.update(user_ref, {
         'gem_count': firestore.Increment(-upgrade_cost),
         'inventory': inventory
