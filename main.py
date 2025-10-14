@@ -322,8 +322,8 @@ async def on_reaction_add(reaction, user):
     and records claims in Firebase.
     """
     db = db_manager.get_db()
-    gem_counts = [4, 5, 6, 7, 8]
-    weights = [0.5, 0.25, 0.15, 0.07, 0.03]
+    gem_counts = [6, 7, 8, 9, 10] # Increased base gems by +2
+    weights = [0.5, 0.25, 0.15, 0.07, 0.03] # Weights remain the same for the new values
 
     if user == client.user:
         return
@@ -353,7 +353,7 @@ async def on_reaction_add(reaction, user):
             async def process_gem_claim(user, is_sparkly):
                 # Determine base gem count
                 if is_sparkly:
-                    base_gem_count = random.randint(10, 18)
+                    base_gem_count = random.randint(12, 20) # Increased sparkly gems by +2
                     logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
                 else:
                     base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]

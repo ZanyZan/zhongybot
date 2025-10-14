@@ -201,7 +201,11 @@ def with_db_error_handling(func):
             try:
                 # Attempt to execute the wrapped command function
                 return await func(message, *args, **kwargs)
-            except (google_exceptions.Unavailable, google_exceptions.DeadlineExceeded) as e:
+            except (
+                google_exceptions.DeadlineExceeded,
+                google_exceptions.ServiceUnavailable, 
+                google_exceptions.InternalServerError
+            ) as e:
                 logging.warning(f"DB connection error in '{func.__name__}' (Attempt {i + 1}/{retries}): {e}")
                 if i < retries - 1:
                     await asyncio.sleep(delay)
