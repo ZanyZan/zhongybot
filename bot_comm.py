@@ -434,6 +434,10 @@ async def handle_mine(message):
         inventory = user_data.get('inventory', {})
         pickaxe_data = inventory.get('pickaxe')
 
+        # Check if user has an autominer
+        if 'autominer' in inventory:
+            return "has_autominer", None
+
         if not pickaxe_data:
             return "no_pickaxe", None
 
@@ -490,6 +494,8 @@ async def handle_mine(message):
 
     if result == "no_inventory":
         await message.channel.send("You don't have any items. You need to buy a pickaxe from the `~shop` to mine for gems!")
+    elif result == "has_autominer":
+        await message.channel.send(f"{message.author.display_name}, you have an Automated Mining Drill! It handles all your mining for you, so you don't need to use this command anymore.")
     elif result == "no_pickaxe":
         await message.channel.send("You need a pickaxe to mine for gems! You can buy one from the `~shop`.")
     elif result == "cooldown":
@@ -1105,21 +1111,21 @@ async def handle_daily(message):
     if db is None:
         await message.channel.send("Database connection is not available. Please try again later.")
         return
-
+    
     user_id = str(message.author.id)
     user_ref = db.collection('user_gem_counts').document(user_id)
-
+    
     # Define base daily reward
-    base_daily_reward = 10 # Or make it random random.randint(5, 15)
-
+    base_daily_reward = 10
+    
     doc = user_ref.get()
     current_time_utc = datetime.now(timezone.utc)
-    user_data = {} # Initialize user_data
-
+    user_data = {}
+    
     if doc.exists:
         user_data = doc.to_dict()
         last_claim_utc = user_data.get('last_daily_claim')
-
+        
         if last_claim_utc:
             # Check if the last claim was on the same calendar day in UTC
             if last_claim_utc.date() == current_time_utc.date():
@@ -1127,33 +1133,52 @@ async def handle_daily(message):
                 tomorrow_utc = current_time_utc.date() + timedelta(days=1)
                 next_reset_utc = datetime.combine(tomorrow_utc, datetime.min.time(), tzinfo=timezone.utc)
                 time_left = next_reset_utc - current_time_utc
-
+                
                 hours, remainder = divmod(time_left.total_seconds(), 3600)
                 minutes, _ = divmod(remainder, 60)
                 await message.channel.send(f"You've already claimed your daily gems today. Please wait another {int(hours)} hours and {int(minutes)} minutes for the reset.")
                 return
-
+    
+    # --- Streak Logic ---
+    current_streak = user_data.get('daily_streak', 0)
+    last_claim_date = user_data.get('last_daily_claim', None)
+    
+    if last_claim_date and (current_time_utc.date() == last_claim_date.date() + timedelta(days=1)):
+        # User claimed yesterday, continue the streak
+        current_streak += 1
+    else:
+        # User missed a day or it's their first claim, reset streak to 1
+        current_streak = 1
+        
+    # Calculate streak bonus (e.g., 1 extra gem per day, capped at 7)
+    streak_bonus = min(current_streak, 7)
+    
     # Check for gem acquisition booster using the helper function
     inventory = user_data.get('inventory', {})
     acquisition_multiplier = get_booster_multiplier(inventory)
     if acquisition_multiplier > 1.0:
         logging.info(f"User {message.author.display_name} has gem booster for daily. Applying multiplier: {acquisition_multiplier}")
-
+        
     # Calculate final gem count after applying multiplier
-    final_daily_reward = math.ceil(base_daily_reward * acquisition_multiplier)
-
+    total_base_reward = base_daily_reward + streak_bonus
+    final_daily_reward = math.ceil(total_base_reward * acquisition_multiplier)
+    
     user_ref.set({
         'username': message.author.display_name,
         'gem_count': firestore.Increment(final_daily_reward),
-        'last_daily_claim': current_time_utc
+        'last_daily_claim': current_time_utc,
+        'daily_streak': current_streak
     }, merge=True)
-
+    
     # Construct response message
-    response_message = f"You have claimed your daily {base_daily_reward} gems! {config.EMOJI_GEM}"
+    response_message = f"You have claimed your daily **{base_daily_reward}** gems! {config.EMOJI_GEM}"
+    if streak_bonus > 0:
+        response_message += f"\nYour **{current_streak}-day streak** grants you a bonus of **{streak_bonus}** gem(s)!"
+        
     if acquisition_multiplier > 1.0:
-        bonus_gems = final_daily_reward - base_daily_reward
-        response_message += f"\nThanks to your Gem Acquisition Booster, you received a bonus of {bonus_gems} gem(s), for a total of {final_daily_reward}!"
-
+        booster_bonus = final_daily_reward - total_base_reward
+        response_message += f"\nYour Gem Acquisition Booster added **{booster_bonus}** gem(s), for a total of **{final_daily_reward}**!"
+        
     await message.channel.send(response_message)
     logging.info(f"User {message.author.display_name} ({user_id}) claimed their daily {final_daily_reward} gems.")
 

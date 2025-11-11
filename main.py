@@ -158,10 +158,93 @@ command_handlers = {
 async def on_ready():
   """
     Event triggered when the bot is ready. Starts the time update loop.
+    Event triggered when the bot is ready. Starts background tasks.
   """
   update_my_time.start()
   client.loop.create_task(start_gem_spawning())  # Start the gem spawn task
+  process_automine.start() # Start the automine task
   logging.info(f"Logged in as {client.user}")
+
+
+@tasks.loop(minutes=5)
+async def process_automine():
+    """
+    Periodically checks for users with an autominer whose mining cooldown
+    has expired and automatically mines for them.
+    """
+    await client.wait_until_ready()
+    db = db_manager.get_db()
+    if db is None:
+        logging.warning("Automine: Database not available, skipping run.")
+        return
+
+    logging.info("Starting automine process...")
+    # Query for all users that have an autominer.
+    users_ref = db.collection('user_gem_counts')
+    query = users_ref.where(filter=FieldFilter('inventory.autominer', '!=', None))
+
+    try:
+        docs = query.stream()
+        processed_count = 0
+        current_time_utc = datetime.now(timezone.utc)
+        cooldown_seconds = config.MINE_COOLDOWN_SECONDS
+
+        for doc in docs:
+            # Use a transaction for each user to ensure data consistency
+            @firestore.transactional
+            def automine_transaction(transaction, user_ref):
+                snapshot = user_ref.get(transaction=transaction)
+                if not snapshot.exists:
+                    return None
+
+                user_data = snapshot.to_dict()
+                inventory = user_data.get('inventory', {})
+                
+                # Double-check for autominer and pickaxe
+                if 'autominer' not in inventory or 'pickaxe' not in inventory:
+                    return None
+
+                last_mine_time = user_data.get('last_mine_time')
+                if last_mine_time:
+                    time_since_last_mine = current_time_utc - last_mine_time
+                    if time_since_last_mine.total_seconds() < cooldown_seconds:
+                        return None # Still on cooldown
+
+                # --- Replicate mining logic from handle_mine ---
+                pickaxe_data = inventory.get('pickaxe', {})
+                pickaxe_level = pickaxe_data.get('level', 1)
+                min_gems, max_gems = bot_comm.PICKAXE_LEVEL_REWARDS.get(pickaxe_level, bot_comm.PICKAXE_LEVEL_REWARDS[1])
+                gems_found = random.randint(min_gems, max_gems)
+
+                total_multiplier = 1.0
+                acquisition_multiplier = get_booster_multiplier(inventory)
+                total_multiplier *= acquisition_multiplier
+                if 'unicorn' in inventory:
+                    unicorn_info = inventory.get('unicorn', {})
+                    unicorn_multiplier = unicorn_info.get('effect', {}).get('mining_multiplier', 1.0)
+                    total_multiplier *= unicorn_multiplier
+                
+                final_gems_found = math.ceil(gems_found * total_multiplier)
+
+                transaction.update(user_ref, {
+                    'gem_count': Increment(final_gems_found),
+                    'last_mine_time': SERVER_TIMESTAMP
+                })
+                return final_gems_found
+
+            # Execute the transaction for the user
+            gems_mined = automine_transaction(db.transaction(), doc.reference)
+            if gems_mined is not None:
+                processed_count += 1
+                logging.info(f"Automined {gems_mined} gems for user {doc.id}.")
+
+        if processed_count > 0:
+            logging.info(f"Automine process complete. Mined for {processed_count} users.")
+        else:
+            logging.info("Automine process complete. No users were ready for mining.")
+
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during automine process: {e}")
 
 
 async def start_gem_spawning():

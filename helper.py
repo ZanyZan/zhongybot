@@ -333,6 +333,14 @@ shop_items = {
         "effect": {},
         "category": "Tools"
     },
+    "autominer": {
+        "name": "Automated Mining Drill",
+        "description": "A sophisticated drill that automatically uses your pickaxe to mine gems for you whenever your cooldown is ready.",
+        "cost": 8000,
+        "type": "passive",
+        "effect": {},
+        "category": "Tools"
+    },
     "suspicious_bag": {
         "name": "Suspicious-Looking Bag",
         "description": "What's inside? Could be gems, could be nothing, or it could be a curse that makes the bot mock you for an hour. High risk, high reward!",
