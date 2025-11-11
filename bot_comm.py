@@ -526,6 +526,11 @@ async def handle_upgrade(message):
     args = message.content.split()
     item_to_upgrade = args[1].lower() if len(args) > 1 else None
 
+    # --- Map aliases to the correct inventory item_id ---
+    item_id_map = {
+        'booster': 'gem_booster'
+    }
+
     # --- Configuration mapping for different upgradeable items ---
     upgrade_configs = {
         'pickaxe': {
@@ -588,7 +593,9 @@ async def handle_upgrade(message):
 
         user_data = doc.to_dict()
         inventory = user_data.get('inventory', {})
-        item_data = inventory.get(item_to_upgrade)
+        # Use the map to get the correct item_id for the inventory lookup
+        inventory_item_id = item_id_map.get(item_to_upgrade, item_to_upgrade)
+        item_data = inventory.get(inventory_item_id)
 
         if not item_data:
             await message.channel.send(f"You don't have a {config['name']} to upgrade. Buy one from the `~shop` first!")

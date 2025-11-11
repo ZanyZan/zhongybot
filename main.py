@@ -23,7 +23,7 @@ import google.generativeai as genai
 from google.cloud.firestore_v1.base_query import FieldFilter
 from google.api_core import exceptions as google_exceptions
 from firebase_admin.firestore import SERVER_TIMESTAMP, Increment
-
+from firebase_admin import firestore
 import db_manager
 import bot_comm 
 
