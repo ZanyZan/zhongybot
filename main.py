@@ -153,6 +153,7 @@ command_handlers = {
     "time": lambda msg: bot_comm.handle_time(msg, my_time),
     "roll": bot_comm.handle_roll,
 }
+command_handlers.update(bot_comm.command_handlers)
 
 @client.event
 async def on_ready():
@@ -180,7 +181,7 @@ async def process_automine():
 
     logging.info("Starting automine process...")
     # Query for all users that have an autominer.
-    users_ref = db.collection('user_gem_counts')
+    users_ref = db.collection('user_profile')
     query = users_ref.where(filter=FieldFilter('inventory.autominer', '!=', None))
 
     try:
@@ -392,9 +393,8 @@ async def _delete_message_after_delay(message: discord.Message, delay: int):
                 batch.commit()
                 logging.info(f"Cleaned up {deleted_count} claim(s) from database for message ID {message_id}.")
         except google_exceptions.Unavailable:
-            # This is a background task, so we just log the warning. The next user-facing
-            # command that fails will trigger the re-initialization.
-            logging.warning("Firestore unavailable during gem claim cleanup for message ID %s.", message_id)
+            # Trigger a reconnect on persistent failure
+            db_manager.handle_db_error(e, f"during gem claim cleanup for message ID {message_id}")
         except Exception as e:
             logging.error(f"An error occurred while cleaning up gem claims for message ID {message_id}: {e}")
 
@@ -433,17 +433,17 @@ async def on_reaction_add(reaction, user):
             first_claim_time = first_claim_timestamp.get(message_id)
 
             # Helper function to process the claim, avoiding code duplication.
-            async def process_gem_claim(user, is_sparkly):
+            async def process_gem_claim(user, is_sparkly_claim):
                 # Determine base gem count
-                if is_sparkly:
-                    base_gem_count = random.randint(12, 20) # Increased sparkly gems by +2
+                if is_sparkly_claim:
+                    base_gem_count = random.randint(12, 20)
                     logging.info(f"Sparkly gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
                 else:
                     base_gem_count = random.choices(gem_counts, weights=weights, k=1)[0]
                     logging.info(f"Regular gem claimed! User {user.display_name} gets {base_gem_count} base gems.")
 
                 # Check for booster using the helper function
-                user_doc_ref = db.collection('user_gem_counts').document(str(user.id))
+                user_doc_ref = db.collection('user_profile').document(str(user.id))
                 user_doc = user_doc_ref.get()
                 inventory = user_doc.to_dict().get('inventory', {}) if user_doc.exists else {}
                 acquisition_multiplier = get_booster_multiplier(inventory)

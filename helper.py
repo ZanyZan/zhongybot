@@ -6,6 +6,7 @@ import random
 from functools import wraps
 from google.api_core import exceptions as google_exceptions
 import logging
+import db_manager
 
 #function helper to format an epoch timestamp to a gicen timezone and format
 def format_timestamp(timestamp, timezone, format):
@@ -204,7 +205,8 @@ def with_db_error_handling(func):
             except (
                 google_exceptions.DeadlineExceeded,
                 google_exceptions.ServiceUnavailable, 
-                google_exceptions.InternalServerError
+                google_exceptions.InternalServerError,
+                google_exceptions.ResourceExhausted
             ) as e:
                 logging.warning(f"DB connection error in '{func.__name__}' (Attempt {i + 1}/{retries}): {e}")
                 if i < retries - 1:
@@ -212,6 +214,8 @@ def with_db_error_handling(func):
                     delay *= 2  # Exponential backoff
                 else:
                     logging.error(f"DB operation failed after {retries} retries in '{func.__name__}'.")
+                    # After all retries fail, trigger a global reconnection.
+                    db_manager.handle_db_error(e, f"in command '{func.__name__}'")
                     await message.channel.send("I'm having trouble connecting to the database right now. Please try again in a moment.")
                     return
             except Exception as e:

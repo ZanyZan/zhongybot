@@ -61,7 +61,7 @@ async def handle_checkgems(message):
         return
 
     user_id = str(message.author.id)
-    user_gem_counts_ref = db.collection('user_gem_counts').document(user_id)
+    user_gem_counts_ref = db.collection('user_profile').document(user_id)
 
     doc = user_gem_counts_ref.get()
     if doc.exists:
@@ -332,7 +332,7 @@ async def handle_givegems(message):
         await message.channel.send("Invalid amount specified. Please provide a number.")
         return
 
-    user_gem_counts_ref = db.collection('user_gem_counts').document(str(target_user.id))
+    user_gem_counts_ref = db.collection('user_profile').document(str(target_user.id))
 
     # Increment the user's gem count
     user_gem_counts_ref.set({
@@ -373,7 +373,7 @@ async def handle_takegems(message):
         await message.channel.send("Invalid amount specified. Please provide a number.")
         return
 
-    user_gem_counts_ref = db.collection('user_gem_counts').document(str(target_user.id))
+    user_gem_counts_ref = db.collection('user_profile').document(str(target_user.id))
 
     @firestore.transactional
     def update_in_transaction(transaction, user_ref, amount_to_take):
@@ -422,7 +422,7 @@ async def handle_mine(message):
         return
 
     user_id = str(message.author.id)
-    user_ref = db.collection('user_gem_counts').document(user_id)
+    user_ref = db.collection('user_profile').document(user_id)
     
     @firestore.transactional
     def mine_transaction(transaction, user_ref):
@@ -566,7 +566,7 @@ async def handle_upgrade(message):
     config = upgrade_configs[item_to_upgrade]
     is_confirm = len(args) > 2 and args[2].lower() == 'confirm'
     user_id = str(message.author.id)
-    user_ref = db.collection('user_gem_counts').document(user_id)
+    user_ref = db.collection('user_profile').document(user_id)
 
     # --- Generic Upgrade Confirmation Logic ---
     if is_confirm:
@@ -683,7 +683,7 @@ async def handle_slots(message):
 
 
         user_id = str(message.author.id)
-        user_gem_counts_ref = db.collection('user_gem_counts').document(user_id)
+        user_gem_counts_ref = db.collection('user_profile').document(user_id)
 
         # Check for rigged ticket BEFORE payment transaction
         user_doc = user_gem_counts_ref.get()
@@ -876,7 +876,7 @@ async def handle_wipegems(message, target_role_id):
         return
 
     wiped_users = []
-    user_gem_counts_ref = db.collection('user_gem_counts')
+    user_gem_counts_ref = db.collection('user_profile')
 
     # Iterate through all members in the guild
     for member in guild.members:
@@ -947,7 +947,7 @@ async def handle_buy(message):
         return
 
     user_id = str(message.author.id)
-    user_doc_ref = db.collection('user_gem_counts').document(user_id)
+    user_doc_ref = db.collection('user_profile').document(user_id)
 
     @firestore.transactional
     def buy_item_transaction(transaction, user_ref, item_id, item_details, user_display_name):
@@ -1011,7 +1011,7 @@ async def handle_inventory(message):
         return
 
     user_id = str(message.author.id)
-    user_doc_ref = db.collection('user_gem_counts').document(user_id)
+    user_doc_ref = db.collection('user_profile').document(user_id)
 
     doc = user_doc_ref.get()
     if doc.exists:
@@ -1056,7 +1056,7 @@ async def handle_use(message):
         return
 
     user_id = str(message.author.id)
-    user_doc_ref = db.collection('user_gem_counts').document(user_id)
+    user_doc_ref = db.collection('user_profile').document(user_id)
 
     # Transaction to consume the item
     @firestore.transactional
@@ -1120,7 +1120,7 @@ async def handle_daily(message):
         return
     
     user_id = str(message.author.id)
-    user_ref = db.collection('user_gem_counts').document(user_id)
+    user_ref = db.collection('user_profile').document(user_id)
     
     # Define base daily reward
     base_daily_reward = 10
@@ -1198,7 +1198,7 @@ async def handle_leaderboard(message):
         return
 
     # Query the top 10 users by gem_count in descending order
-    users_ref = db.collection('user_gem_counts')
+    users_ref = db.collection('user_profile')
     query = users_ref.order_by('gem_count', direction=firestore.Query.DESCENDING).limit(10)
     docs = query.stream()
 
@@ -1239,7 +1239,7 @@ async def handle_starforce(message):
     WEIGHTS = [0.60, 0.35, 0.05] # 60% success, 35% fail, 5% boom
 
     user_id = str(message.author.id)
-    user_ref = db.collection('user_gem_counts').document(user_id)
+    user_ref = db.collection('user_profile').document(user_id)
 
     # --- Transaction to handle the entire gamble ---
     @firestore.transactional
@@ -1438,7 +1438,7 @@ async def handle_payoutpoll(message, client):
 
     # Award gems
     batch = db.batch()
-    user_gem_counts_ref = db.collection('user_gem_counts')
+    user_gem_counts_ref = db.collection('user_profile')
     for user in winning_voters:
         user_ref = user_gem_counts_ref.document(str(user.id))
         batch.set(user_ref, {
@@ -1460,6 +1460,57 @@ async def handle_payoutpoll(message, client):
         await message.channel.send(chunk)
         
     logging.info(f"Paid out {amount} gems to {len(winning_voters)} users for poll {poll_message.id}.")
+
+@with_db_error_handling
+async def handle_profile(message):
+    """Displays a user's profile, including gems, inventory, and daily streak."""
+    db = get_db()
+    if db is None:
+        await message.channel.send("Database connection is not available. Please try again later.")
+        return
+
+    # Determine the target user (either the author or a mentioned user)
+    target_user = message.mentions[0] if message.mentions else message.author
+    user_id = str(target_user.id)
+    user_doc_ref = db.collection('user_profile').document(user_id)
+
+    doc = user_doc_ref.get()
+
+    if not doc.exists:
+        await message.channel.send(f"{target_user.display_name} doesn't have a profile yet. Try participating in some activities!")
+        return
+
+    user_data = doc.to_dict()
+    gem_count = user_data.get('gem_count', 0)
+    daily_streak = user_data.get('daily_streak', 0)
+    inventory = user_data.get('inventory', {})
+
+    # --- Build the Embed ---
+    embed = discord.Embed(
+        title=f"{target_user.display_name}'s Profile",
+        color=discord.Colour.purple()
+    )
+    if target_user.avatar:
+        embed.set_thumbnail(url=target_user.avatar.url)
+
+    # --- Add Stats ---
+    embed.add_field(name=f"{config.EMOJI_GEM} Gems", value=f"**{gem_count}**", inline=True)
+    embed.add_field(name=f"{config.EMOJI_STAR} Daily Streak", value=f"**{daily_streak}** day(s)", inline=True)
+
+    # --- Format and Add Inventory ---
+    if not inventory:
+        inventory_text = "Your inventory is empty."
+    else:
+        inventory_list = []
+        for item_id, item_info in sorted(inventory.items()):
+            item_name = shop_items.get(item_id, {}).get('name', item_id.replace('_', ' ').title())
+            quantity = item_info.get('quantity', 1)
+            inventory_list.append(f"• {item_name} (x{quantity})")
+        inventory_text = "\n".join(inventory_list)
+    
+    embed.add_field(name="🎒 Inventory", value=inventory_text, inline=False)
+
+    await message.channel.send(embed=embed)
 
 command_handlers = {
     'ursus': handle_ursus,
@@ -1491,4 +1542,5 @@ command_handlers = {
     'upgrade': handle_upgrade,
     'mine': handle_mine,
     'payoutpoll': handle_payoutpoll,
+    'profile': handle_profile,
 }

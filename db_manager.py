@@ -62,3 +62,13 @@ def reinitialize_db():
         # This call is now safe because we are using an RLock
         initialize_db()
     return get_db()
+
+def handle_db_error(e: Exception, context_message: str = "in a background task"):
+    """
+    Centralized handler for critical database errors. It logs the error
+    and attempts to re-initialize the database connection.
+    """
+    logging.error(f"Critical Firestore error encountered {context_message}: {e}. Attempting to reconnect.")
+    # This function will tear down the old connection and build a new one.
+    reinitialize_db()
+    logging.info("Firestore re-initialization process completed.")
