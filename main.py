@@ -80,7 +80,7 @@ async def spawn_gem():
                 logging.info("Sparkly gem spawned!")
             else:
                 message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
-                print("Regular gem spawned.")
+                logging.info("Regular gem spawned.")
 
             # --- Add pings if there are charm holders ---
             if charm_holders:
@@ -122,7 +122,7 @@ async def manual_gem_spawn():
                 logging.info("Sparkly gem spawned!")
             else:
                 message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
-                print("Regular gem spawned.")
+                logging.info("Regular gem spawned.")
 
             # --- Add pings if there are charm holders ---
             if charm_holders:
