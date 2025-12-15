@@ -85,7 +85,6 @@ async def spawn_gem():
             role_ping = f"<@&{config.GEM_FINDER_ROLE_ID}>"
             message_content = f"{role_ping} {_build_gem_spawn_message(is_sparkly <= 1)}"
             message = await channel.send(message_content, allowed_mentions=discord.AllowedMentions(roles=True))
-            message = await channel.send(message_content)
             await message.add_reaction(config.EMOJI_GEM)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
@@ -112,7 +111,6 @@ async def manual_gem_spawn():
             role_ping = f"<@&{config.GEM_FINDER_ROLE_ID}>"
             message_content = f"{role_ping} {_build_gem_spawn_message(is_sparkly <= 1)}"
             message = await channel.send(message_content, allowed_mentions=discord.AllowedMentions(roles=True))
-            message = await channel.send(message_content)
             await message.add_reaction(config.EMOJI_GEM)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id

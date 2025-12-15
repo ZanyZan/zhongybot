@@ -146,6 +146,7 @@ async def handle_help(message):
     `~inventory` - Shows your purchased items.
     `~slots [rolls]` - Play the slot machine (e.g., `~slots 5`).    
     `~upgrade <item> [confirm]` - Upgrade your `pickaxe` or `booster`.
+    `~togglegemrole` - Toggles the @GemFinder role on/off if you've purchased it.
 
     **Fun & AI Commands**
     `~roll [d#]` - Rolls a die (d20 default, e.g., `~roll d100`).
@@ -1534,6 +1535,54 @@ async def handle_profile(message):
 
     await message.channel.send(embed=embed)
 
+@with_db_error_handling
+async def handle_togglegemrole(message):
+    """Toggles the Gem Finder role on or off for the user if they have purchased it."""
+    db = get_db()
+    if db is None:
+        await message.channel.send("Database connection is not available. Please try again later.")
+        return
+
+    user_id = str(message.author.id)
+    user_ref = db.collection('user_profile').document(user_id)
+
+    doc = user_ref.get()
+    if not doc.exists:
+        await message.channel.send("You must purchase the Gem Finder's Role from the `~shop` to use this command.")
+        return
+
+    user_data = doc.to_dict()
+    inventory = user_data.get('inventory', {})
+
+    if 'gem_finder_role' not in inventory:
+        await message.channel.send("You have not purchased the Gem Finder's Role. You can buy access from the `~shop`.")
+        return
+
+    if not isinstance(message.author, discord.Member):
+        await message.channel.send("I can't seem to manage your roles. Please run this command in the server.")
+        return
+
+    member = message.author
+    role = message.guild.get_role(config.GEM_FINDER_ROLE_ID)
+
+    if not role:
+        logging.error(f"Gem Finder Role with ID {config.GEM_FINDER_ROLE_ID} not found in this server.")
+        await message.channel.send("The Gem Finder role is misconfigured. Please contact an admin.")
+        return
+
+    try:
+        if role in member.roles:
+            # User has the role, so remove it.
+            await member.remove_roles(role, reason="User toggled Gem Finder role off.")
+            await message.channel.send(f"The **{role.name}** role has been removed. You will no longer be pinged for gem spawns.")
+        else:
+            # User does not have the role, so add it.
+            await member.add_roles(role, reason="User toggled Gem Finder role on.")
+            await message.channel.send(f"You have been granted the **{role.name}** role. You will now be pinged for gem spawns.")
+    except discord.Forbidden:
+        logging.error(f"Lacking permissions to assign/remove the Gem Finder Role.")
+        await message.channel.send("I couldn't change your roles due to missing permissions. Please contact an admin.")
+
 command_handlers = {
     'ursus': handle_ursus,
     'servertime': handle_servertime, 
@@ -1565,4 +1614,5 @@ command_handlers = {
     'mine': handle_mine,
     'payoutpoll': handle_payoutpoll,
     'profile': handle_profile,
+    'togglegemrole': handle_togglegemrole,
 }
