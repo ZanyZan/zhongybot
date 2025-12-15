@@ -27,7 +27,7 @@ from firebase_admin import firestore
 import db_manager
 import bot_comm 
 
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_booster_multiplier, get_gem_charm_holders
+from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_booster_multiplier
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -59,7 +59,7 @@ async def update_my_time():
   global my_time
   my_time = int(time.time())
 
-def _build_gem_spawn_message(is_sparkly: bool, charm_holders: list) -> str:
+def _build_gem_spawn_message(is_sparkly: bool) -> str:
     """Builds the content for a gem spawn message."""
     if is_sparkly:
         logging.info("Sparkly gem spawned!")
@@ -82,19 +82,10 @@ async def spawn_gem():
     if channel:
         try:
             is_sparkly = random.randint(1,5)
-            
-            # --- Get users with Gem Finder's Charm ---
-            db = db_manager.get_db()
-            charm_holders = get_gem_charm_holders(db)
-            
-            message_content = _build_gem_spawn_message(is_sparkly <= 1, []) # Pass empty list now
+            role_ping = f"<@&{config.GEM_FINDER_ROLE_ID}>"
+            message_content = f"{role_ping} {_build_gem_spawn_message(is_sparkly <= 1)}"
+            message = await channel.send(message_content, allowed_mentions=discord.AllowedMentions(roles=True))
             message = await channel.send(message_content)
-
-            # If there are charm holders, send a separate message with pings
-            if charm_holders:
-                ping_message = " ".join(charm_holders)
-                await channel.send(ping_message, allowed_mentions=discord.AllowedMentions(users=True))
-
             await message.add_reaction(config.EMOJI_GEM)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
@@ -118,19 +109,10 @@ async def manual_gem_spawn():
     if channel:
         try:
             is_sparkly = random.randint(1,5)
-
-            # --- Get users with Gem Finder's Charm ---
-            db = db_manager.get_db()
-            charm_holders = get_gem_charm_holders(db)
-
-            message_content = _build_gem_spawn_message(is_sparkly <= 1, []) # Pass empty list now
+            role_ping = f"<@&{config.GEM_FINDER_ROLE_ID}>"
+            message_content = f"{role_ping} {_build_gem_spawn_message(is_sparkly <= 1)}"
+            message = await channel.send(message_content, allowed_mentions=discord.AllowedMentions(roles=True))
             message = await channel.send(message_content)
-
-            # If there are charm holders, send a separate message with pings
-            if charm_holders:
-                ping_message = " ".join(charm_holders)
-                await channel.send(ping_message, allowed_mentions=discord.AllowedMentions(users=True))
-
             await message.add_reaction(config.EMOJI_GEM)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
@@ -174,7 +156,6 @@ command_handlers = {
     "servertime": lambda msg: bot_comm.handle_servertime(msg, my_time),
     "time": lambda msg: bot_comm.handle_time(msg, my_time),
     "roll": bot_comm.handle_roll,
-    "togglecharm": bot_comm.handle_togglecharm,
 }
 command_handlers.update(bot_comm.command_handlers)
 
@@ -441,6 +422,17 @@ async def on_reaction_add(reaction, user):
     if str(reaction.emoji) == config.EMOJI_GEM and reaction.message.author == client.user and reaction.message.id == spawned_gem_message_id:
         message_id = reaction.message.id
         channel = reaction.message.channel
+
+        # --- Role Check ---
+        # Ensure the user is a Member object to access roles and check for the required role.
+        if not isinstance(user, discord.Member) or not any(role.id == config.MEMBER_ROLE_ID for role in user.roles):
+            try:
+                # Remove the reaction to provide feedback to the user.
+                await reaction.remove(user)
+                logging.info(f"Removed reaction from {user.display_name} ({user.id}) for lacking the Member role.")
+            except discord.Forbidden:
+                logging.warning(f"Failed to remove reaction from {user.display_name} due to missing permissions.")
+            return # Stop processing the claim
 
         # Check if the user has already claimed this specific gem
         gem_claims_ref = db.collection('gem_claims')

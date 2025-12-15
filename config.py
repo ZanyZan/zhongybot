@@ -42,6 +42,7 @@ GEM_SPAWN_CHANNEL_ID = _get_env_var("GEM_SPAWN_CHANNEL_ID", var_type=int)
 BOT_SPAM_CHANNEL_ID = _get_env_var("BOT_SPAM_CHANNEL_ID", var_type=list_int)
 FORWARD_CHANNEL_ID = _get_env_var("FORWARD_CHANNEL_ID", var_type=int)
 MEMBER_ROLE_ID = _get_env_var("MEMBER_ROLE_ID", var_type=int)
+GEM_FINDER_ROLE_ID = 1450020666337263676
 HARRI_USER_ID = _get_env_var("HARRI_USER_ID", var_type=int)
 
 # --- Bot Behavior Settings ---

@@ -144,8 +144,7 @@ async def handle_help(message):
     `~shop` - Displays the gem shop.
     `~buy <item_id>` - Buys an item from the shop.
     `~inventory` - Shows your purchased items.
-    `~slots [rolls]` - Play the slot machine (e.g., `~slots 5`).
-    `~togglecharm` - Toggles pings for the Gem Finder's Charm on/off.
+    `~slots [rolls]` - Play the slot machine (e.g., `~slots 5`).    
     `~upgrade <item> [confirm]` - Upgrade your `pickaxe` or `booster`.
 
     **Fun & AI Commands**
@@ -992,10 +991,6 @@ async def handle_buy(message):
                 inventory[item_id]['level'] = 1
 
         update_payload = {'username': user_display_name, 'gem_count': new_gems, 'inventory': inventory}
-        # If buying the gem charm, set the enabled flag to True by default
-        if item_id == 'gem_charm':
-            update_payload['gem_charm_enabled'] = True
-
         # Update the document with new gem count and inventory
         transaction.set(user_ref, update_payload, merge=True)
 
@@ -1011,6 +1006,21 @@ async def handle_buy(message):
     elif transaction_result == "already_owned":
          await message.channel.send(f"You already own **{item_to_buy['name']}**. You can only have one of this item.")
     elif isinstance(transaction_result, dict) and transaction_result.get("status") == "success":
+        # --- Role Granting Logic ---
+        if item_id == 'gem_finder_role':
+            try:
+                role = message.guild.get_role(config.GEM_FINDER_ROLE_ID)
+                if role and isinstance(message.author, discord.Member):
+                    if role not in message.author.roles:
+                        await message.author.add_roles(role, reason="Purchased Gem Finder's Role from shop.")
+                        await message.channel.send(f"You have been granted the **{role.name}** role!")
+                elif not role:
+                    logging.error(f"Gem Finder Role with ID {config.GEM_FINDER_ROLE_ID} not found in this server.")
+            except discord.Forbidden:
+                logging.error(f"Lacking permissions to assign the Gem Finder Role.")
+                await message.channel.send("I couldn't assign the role due to missing permissions. Please contact an admin.")
+            except Exception as e:
+                logging.error(f"An unexpected error occurred while assigning role: {e}")
         new_gems = transaction_result["new_gems"]
         await message.channel.send(f"Successfully purchased **{item_to_buy['name']}** for {item_to_buy['cost']} gem(s). Your new gem balance is {new_gems}.")
         
@@ -1524,47 +1534,6 @@ async def handle_profile(message):
 
     await message.channel.send(embed=embed)
 
-@with_db_error_handling
-async def handle_togglecharm(message):
-    """Toggles the Gem Finder's Charm pings on or off for the user."""
-    db = get_db()
-    if db is None:
-        await message.channel.send("Database connection is not available. Please try again later.")
-        return
-
-    user_id = str(message.author.id)
-    user_ref = db.collection('user_profile').document(user_id)
-
-    doc = user_ref.get()
-    if not doc.exists:
-        await message.channel.send("You don't have a profile yet.")
-        return
-
-    user_data = doc.to_dict()
-    inventory = user_data.get('inventory', {})
-
-    if 'gem_charm' not in inventory:
-        await message.channel.send("You don't own a Gem Finder's Charm. You can buy one from the `~shop`.")
-        return
-
-    # Get the current state, defaulting to True if it doesn't exist.
-    current_state = user_data.get('gem_charm_enabled', True)
-    new_state = not current_state
-
-    user_ref.update({'gem_charm_enabled': new_state})
-
-    if new_state:
-        response = "Your Gem Finder's Charm notifications have been **enabled**. You will now be pinged when gems spawn."
-    else:
-        response = "Your Gem Finder's Charm notifications have been **disabled**. You will no longer be pinged when gems spawn."
-
-    embed = discord.Embed(
-        title="Charm Notifications Updated",
-        description=response,
-        color=discord.Colour.green() if new_state else discord.Colour.red()
-    )
-    await message.channel.send(embed=embed)
-
 command_handlers = {
     'ursus': handle_ursus,
     'servertime': handle_servertime, 
@@ -1596,5 +1565,4 @@ command_handlers = {
     'mine': handle_mine,
     'payoutpoll': handle_payoutpoll,
     'profile': handle_profile,
-    'togglecharm': handle_togglecharm,
 }
