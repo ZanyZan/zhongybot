@@ -59,6 +59,18 @@ async def update_my_time():
   global my_time
   my_time = int(time.time())
 
+def _build_gem_spawn_message(is_sparkly: bool, charm_holders: list) -> str:
+    """Builds the content for a gem spawn message."""
+    if is_sparkly:
+        logging.info("Sparkly gem spawned!")
+        message_content = f"Wow! {config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE} A shiny gem has appeared! Go claim it!"
+    else:
+        logging.info("Regular gem spawned!")
+        message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
+    
+    return message_content
+
+
 @tasks.loop()
 async def spawn_gem():
     """
@@ -75,20 +87,14 @@ async def spawn_gem():
             db = db_manager.get_db()
             charm_holders = get_gem_charm_holders(db)
             
-            if is_sparkly <= 1:
-                message_content = f"Wow! {config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE} A shiny gem has appeared! Go claim it!"
-                logging.info("Sparkly gem spawned!")
-            else:
-                message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
-                logging.info("Regular gem spawned.")
+            message_content = _build_gem_spawn_message(is_sparkly <= 1, []) # Pass empty list now
+            message = await channel.send(message_content)
 
-            # --- Add pings if there are charm holders ---
+            # If there are charm holders, send a separate message with pings
             if charm_holders:
                 ping_message = " ".join(charm_holders)
-                message_content += f"\n\nYour charm is humming! {ping_message}"
+                await channel.send(ping_message, allowed_mentions=discord.AllowedMentions(users=True))
 
-            # Add the gem emoji as a reaction to the message
-            message = await channel.send(message_content)
             await message.add_reaction(config.EMOJI_GEM)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id
@@ -103,7 +109,7 @@ async def spawn_gem():
     # After spawning a gem, reschedule the loop with a new random interval
     seconds = random.randint(config.MIN_GEM_SPAWN_INTERVAL, config.MAX_GEM_SPAWN_INTERVAL)
     spawn_gem.change_interval(seconds=seconds)
-    print(f"Next gem will spawn in {convert(seconds)}")
+    logging.info(f"Next gem will spawn in {convert(seconds)}")
 
 
 async def manual_gem_spawn():
@@ -117,20 +123,14 @@ async def manual_gem_spawn():
             db = db_manager.get_db()
             charm_holders = get_gem_charm_holders(db)
 
-            if is_sparkly <= 1:
-                message_content = f"Wow! {config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE} A shiny gem has appeared! Go claim it!"
-                logging.info("Sparkly gem spawned!")
-            else:
-                message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
-                logging.info("Regular gem spawned.")
+            message_content = _build_gem_spawn_message(is_sparkly <= 1, []) # Pass empty list now
+            message = await channel.send(message_content)
 
-            # --- Add pings if there are charm holders ---
+            # If there are charm holders, send a separate message with pings
             if charm_holders:
                 ping_message = " ".join(charm_holders)
-                message_content += f"\n\nYour charm is humming! {ping_message}"
+                await channel.send(ping_message, allowed_mentions=discord.AllowedMentions(users=True))
 
-            # Add the gem emoji as a reaction to the message
-            message = await channel.send(message_content)
             await message.add_reaction(config.EMOJI_GEM)
             global spawned_gem_message_id # Use global to modify the global variable
             spawned_gem_message_id = message.id

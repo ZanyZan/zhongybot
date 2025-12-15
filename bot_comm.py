@@ -81,28 +81,34 @@ async def handle_servertime(message, my_time):
 
 
 async def handle_time(message, my_time):
-    splitted_command = message.content.split('time')
-    arguments = splitted_command[1][1:]
-    if not splitted_command[1]:
+    # Use split() to handle spaces and get arguments cleanly
+    parts = message.content.split()
+    arguments = parts[1:] if len(parts) > 1 else []
+
+    if not arguments:
         response = 'Your time right now is: <t:' + str(my_time) + ':t>'
-        embed = discord.Embed(description=response,
-                              colour=discord.Colour.purple())
+        embed = discord.Embed(description=response, colour=discord.Colour.purple())
         await message.channel.send(embed=embed)
-    elif (arguments[0] == '+' or arguments[0] == '-'):
+    elif len(arguments) == 1 and (arguments[0].startswith('+') or arguments[0].startswith('-')):
+        argument_str = arguments[0]
         day = datetime.fromtimestamp(my_time).day
         month = datetime.fromtimestamp(my_time).month
         year = datetime.fromtimestamp(my_time).year
         server_reset_time = int(datetime(year, month, day, 19, 0, 0).timestamp())
-        operator = arguments[0]
-        addends = arguments[1:]
-        new_time = int(calculate_time(server_reset_time, operator, float(addends) * 3600))
-        response = arguments + ' is: <t:' + str(new_time) + ':t>'
+        operator = argument_str[0]
+        addends = argument_str[1:]
+        try:
+            new_time = int(calculate_time(server_reset_time, operator, float(addends) * 3600))
+            response = f"{argument_str} from server reset is: <t:{new_time}:t>"
+        except (ValueError, IndexError):
+            response = "Invalid time format. Please use `~time +/-<hours>` (e.g., `~time +3`)."
+        
         embed = discord.Embed(title="Time Converter",
                               description=response,
                               colour=discord.Colour.purple())
         await message.channel.send(embed=embed)
     else:
-        response = 'Try again noob..'
+        response = "Invalid format. Use `~time` for current time or `~time +/-<hours>` for calculations."
         embed = discord.Embed(title="Time Converter",
                               description=response,
                               colour=discord.Colour.purple())
