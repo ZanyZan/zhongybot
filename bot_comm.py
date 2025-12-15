@@ -139,6 +139,7 @@ async def handle_help(message):
     `~buy <item_id>` - Buys an item from the shop.
     `~inventory` - Shows your purchased items.
     `~slots [rolls]` - Play the slot machine (e.g., `~slots 5`).
+    `~togglecharm` - Toggles pings for the Gem Finder's Charm on/off.
     `~upgrade <item> [confirm]` - Upgrade your `pickaxe` or `booster`.
 
     **Fun & AI Commands**
@@ -984,11 +985,16 @@ async def handle_buy(message):
             if item_id == 'gem_booster':
                 inventory[item_id]['level'] = 1
 
+        update_payload = {'username': user_display_name, 'gem_count': new_gems, 'inventory': inventory}
+        # If buying the gem charm, set the enabled flag to True by default
+        if item_id == 'gem_charm':
+            update_payload['gem_charm_enabled'] = True
+
         # Update the document with new gem count and inventory
-        transaction.set(user_ref, {'username': user_display_name, 'gem_count': new_gems, 'inventory': inventory}, merge=True)
+        transaction.set(user_ref, update_payload, merge=True)
 
         return {"status": "success", "new_gems": new_gems}
-    
+
     # Pass the entire item_to_buy dictionary into the transaction
     transaction_result = buy_item_transaction(
         db.transaction(), user_doc_ref, item_id, item_to_buy, message.author.display_name
@@ -1512,6 +1518,47 @@ async def handle_profile(message):
 
     await message.channel.send(embed=embed)
 
+@with_db_error_handling
+async def handle_togglecharm(message):
+    """Toggles the Gem Finder's Charm pings on or off for the user."""
+    db = get_db()
+    if db is None:
+        await message.channel.send("Database connection is not available. Please try again later.")
+        return
+
+    user_id = str(message.author.id)
+    user_ref = db.collection('user_profile').document(user_id)
+
+    doc = user_ref.get()
+    if not doc.exists:
+        await message.channel.send("You don't have a profile yet.")
+        return
+
+    user_data = doc.to_dict()
+    inventory = user_data.get('inventory', {})
+
+    if 'gem_charm' not in inventory:
+        await message.channel.send("You don't own a Gem Finder's Charm. You can buy one from the `~shop`.")
+        return
+
+    # Get the current state, defaulting to True if it doesn't exist.
+    current_state = user_data.get('gem_charm_enabled', True)
+    new_state = not current_state
+
+    user_ref.update({'gem_charm_enabled': new_state})
+
+    if new_state:
+        response = "Your Gem Finder's Charm notifications have been **enabled**. You will now be pinged when gems spawn."
+    else:
+        response = "Your Gem Finder's Charm notifications have been **disabled**. You will no longer be pinged when gems spawn."
+
+    embed = discord.Embed(
+        title="Charm Notifications Updated",
+        description=response,
+        color=discord.Colour.green() if new_state else discord.Colour.red()
+    )
+    await message.channel.send(embed=embed)
+
 command_handlers = {
     'ursus': handle_ursus,
     'servertime': handle_servertime, 
@@ -1543,4 +1590,5 @@ command_handlers = {
     'mine': handle_mine,
     'payoutpoll': handle_payoutpoll,
     'profile': handle_profile,
+    'togglecharm': handle_togglecharm,
 }

@@ -6,6 +6,7 @@ import random
 from functools import wraps
 from google.api_core import exceptions as google_exceptions
 import logging
+from google.cloud.firestore_v1.field_path import FieldPath
 import db_manager
 
 #function helper to format an epoch timestamp to a gicen timezone and format
@@ -369,6 +370,13 @@ shop_items = {
         'effect': {'mining_multiplier': 1.20},
         'category': 'Boosters'
     },
+    'gem_charm': {
+        'name': "Gem Finder's Charm",
+        'description': "A magical charm that hums when a gem spawns nearby, pinging you when one spawns randomly or via `~spawngem`.",
+        'cost': 500,
+        'type': 'unique',
+        'category': 'Utility'
+    },
 }
 # Pickaxe upgrade costs and max level
 
@@ -434,6 +442,40 @@ def perform_upgrade_transaction(transaction, user_ref):
     })
 
     return "success", (current_level + 1, upgrade_cost)
+
+def get_gem_charm_holders(db):
+    """
+    Queries the database and returns a list of user ID mentions for users
+    who own the 'gem_charm'.
+
+    Args:
+        db: The Firestore database client instance.
+
+    Returns:
+        list: A list of strings, where each string is a user mention (e.g., "<@12345>").
+    """
+    charm_holders = []
+    if not db:
+        logging.error("get_gem_charm_holders called with no DB connection.")
+        return charm_holders
+
+    users_ref = db.collection('user_profile')
+    # Query for users who have the 'gem_charm' in their inventory
+    query = users_ref.where(FieldPath(['inventory', 'gem_charm']), '!=', None)
+    docs = query.stream()
+
+    for doc in docs:
+        user_data = doc.to_dict()
+        inventory = user_data.get('inventory', {})
+        
+        # Check if the user has the charm and if notifications are enabled.
+        # Defaults to True if the 'gem_charm_enabled' field doesn't exist for backward compatibility.
+        is_enabled = user_data.get('gem_charm_enabled', True)
+
+        if inventory.get('gem_charm', {}).get('quantity', 0) > 0 and is_enabled:
+            charm_holders.append(f"<@{doc.id}>")
+    
+    return charm_holders
 
 @firestore.transactional
 def perform_booster_upgrade_transaction(transaction, user_ref):

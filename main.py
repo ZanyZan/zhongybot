@@ -27,7 +27,7 @@ from firebase_admin import firestore
 import db_manager
 import bot_comm 
 
-from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_booster_multiplier
+from helper import format_timestamp, calculate_time, get_start_of_week, get_end_of_week, split_response, capi_sentence, are_dates_in_same_week, format_month_day, convert, get_booster_multiplier, get_gem_charm_holders
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -70,12 +70,23 @@ async def spawn_gem():
     if channel:
         try:
             is_sparkly = random.randint(1,5)
+            
+            # --- Get users with Gem Finder's Charm ---
+            db = db_manager.get_db()
+            charm_holders = get_gem_charm_holders(db)
+            
             if is_sparkly <= 1:
                 message_content = f"Wow! {config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE} A shiny gem has appeared! Go claim it!"
                 logging.info("Sparkly gem spawned!")
             else:
                 message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
                 print("Regular gem spawned.")
+
+            # --- Add pings if there are charm holders ---
+            if charm_holders:
+                ping_message = " ".join(charm_holders)
+                message_content += f"\n\nYour charm is humming! {ping_message}"
+
             # Add the gem emoji as a reaction to the message
             message = await channel.send(message_content)
             await message.add_reaction(config.EMOJI_GEM)
@@ -101,12 +112,23 @@ async def manual_gem_spawn():
     if channel:
         try:
             is_sparkly = random.randint(1,5)
+
+            # --- Get users with Gem Finder's Charm ---
+            db = db_manager.get_db()
+            charm_holders = get_gem_charm_holders(db)
+
             if is_sparkly <= 1:
                 message_content = f"Wow! {config.EMOJI_SPARKLE}{config.EMOJI_GEM}{config.EMOJI_SPARKLE} A shiny gem has appeared! Go claim it!"
                 logging.info("Sparkly gem spawned!")
             else:
                 message_content = f"A wild {config.EMOJI_GEM} has appeared! Go claim it!"
                 print("Regular gem spawned.")
+
+            # --- Add pings if there are charm holders ---
+            if charm_holders:
+                ping_message = " ".join(charm_holders)
+                message_content += f"\n\nYour charm is humming! {ping_message}"
+
             # Add the gem emoji as a reaction to the message
             message = await channel.send(message_content)
             await message.add_reaction(config.EMOJI_GEM)
@@ -152,6 +174,7 @@ command_handlers = {
     "servertime": lambda msg: bot_comm.handle_servertime(msg, my_time),
     "time": lambda msg: bot_comm.handle_time(msg, my_time),
     "roll": bot_comm.handle_roll,
+    "togglecharm": bot_comm.handle_togglecharm,
 }
 command_handlers.update(bot_comm.command_handlers)
 
